@@ -82,8 +82,28 @@ isInBounds (x, y) (w, h)
 -- 3. Implementa las siguientes funciones usando pattern matching con los TADs definidos anteriormente:
 
 -- detectedAgent: Determinar si un agente ha detectado a otro en caso de encontrarse dentro del rango de su radar
+
+detectedAgent :: Robot -> Robot -> Distance -> Bool
+detectedAgent (Robot pos1 _ _ _ _) (Robot pos2 _ _ _ _) rango = -- Los valores direccion, velocidad, tamaño y energia son irrelevantes
+    distanceBetween pos1 pos2 <= rango
+
 -- isRobotAlive: True si la energía del robot es mayor a 0
+
+isRobotAlive :: Robot -> Bool
+isRobotAlive (Robot _ _ _ _ energia) = energia > 0
+
 -- countActiveRobots: Contar los robots que están vivos
+
+-- Función para una lista
+
+countActiveRobots :: [Robot] -> Int
+countActiveRobots robots = length [r | r <- robots, isRobotAlive r]
+
+-- Función para un mundo
+
+countActiveRobots :: Mundo -> Int
+countActiveRobots mundo = length [r | r <- jugadores mundo, isRobotAlive r]
+
 -- updateRobotVelocity: Actualiza la velocidad de un robot con una velocidad dada
 -- updateVelocity: Actualizar velocidad basada en la acción de movimiento
 -- updatePosition: Actualizar una posición en función de la velocidad y el incremento de tiempo
