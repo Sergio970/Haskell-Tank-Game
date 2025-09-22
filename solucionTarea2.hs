@@ -8,6 +8,23 @@ type Size = (Float, Float)
 -- 1. Analiza el funcionamiento del juego y piensa en los tipos que son necesarios. 
 -- Realiza una lista durante el análisis visual y posteriormente implementa dichos TADs.
 
+-- Prompt a ChatGPT:
+-- *Main> updatePositionR 5 r
+-- <interactive>:5:1: error:
+--     * No instance for (Show Robot) arising from a use of `print'
+--     * In a stmt of an interactive GHCi command: print it
+
+-- Por que da error esta funcion?
+
+-- updatePositionR :: Float -> Robot -> Robot
+-- updatePositionR dt (Robot pos dir vel size vida) =
+--     Robot (updatePosition dt pos vel) dir vel size vida
+
+-- updatePosition :: Float -> Position -> Vector -> Position
+-- updatePosition dt (x, y) (vx, vy) = (x + vx * dt, y + vy * dt)
+
+-- Para solucionar el error, hemos añadido al final de cada tipo deriving (Show), y así ver los resultados directamente en la terminal.
+
 -- Robot. Tienen los campos de posición, dirección, velocidad, tamaño y energia.
 data Robot = 
     Robot {
@@ -89,6 +106,11 @@ isInBounds (x, y) (w, h)
 
 -- 3. Implementa las siguientes funciones usando pattern matching con los TADs definidos anteriormente:
 
+-- Prompt a ChatGPT:
+-- Dado un juego de robots que disparan proyectiles en un mundo en todas direcciones comprueba que estás funciones sean correctas
+
+-- Para asegurarnos que las funciones estaban bien le preguntamos que verificase cada una de las funciones.
+
 -- detectedAgent: Determinar si un agente ha detectado a otro en caso de encontrarse dentro del rango de su radar
 
 detectedAgent :: Robot -> Robot -> Distance -> Bool
@@ -108,14 +130,15 @@ countActiveRobots robots = length [r | r <- robots, isRobotAlive r]
 
     -- Función para un mundo
 
-    --countActiveRobotsMundo :: Mundo -> Int
-    --countActiveRobotsMundo mundo = length [r | r <- jugadores mundo, isRobotAlive r]
+countActiveRobotsMundo :: Mundo -> Int
+countActiveRobotsMundo mundo = length [r | r <- jugadores mundo, isRobotAlive r]
 
 -- updateRobotVelocity: Actualiza la velocidad de un robot con una velocidad dada
 
 updateRobotVelocity :: Robot -> Vector -> Robot
 updateRobotVelocity (Robot pos dir _ tam energia) nuevaVel =
     Robot pos dir nuevaVel tam energia
+
 -- updateVelocity: Actualizar velocidad basada en la acción de movimiento
 updateVelocity :: Robot -> Vector -> Robot
 updateVelocity (Robot pos dir vel tam energia) accionBot =
@@ -123,6 +146,7 @@ updateVelocity (Robot pos dir vel tam energia) accionBot =
   where
     addVec :: Vector -> Vector -> Vector
     addVec (x1,y1) (x2,y2) = (x1+x2, y1+y2)
+    
 -- updatePosition: Actualizar una posición en función de la velocidad y el incremento de tiempo
 
     -- Función genérica
