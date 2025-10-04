@@ -1,3 +1,5 @@
+import qualified Data.Map.Strict as Map
+
 type Position = (Float, Float)
 type Point    = (Float, Float)
 type Vector   = (Float, Float)
@@ -30,6 +32,18 @@ data TipoCarro = Ligero | Pesado | Cazacarros
 
 data MunicionTipo = AP | AE
     deriving (Show, Eq)
+
+data MemoryValue = VInt Int
+    | VFloat Float
+    | VBool Bool
+    | VStr String
+    | VPos Position
+    | VSize Size
+    | VMunicionTipo MunicionTipo
+    | VTipoCarro TipoCarro
+    deriving (Show, Eq)
+
+type Memory = Map.Map String MemoryValue
 
 data Municion = Municion {
     tipoMun    :: MunicionTipo,
@@ -64,6 +78,12 @@ data Mundo = Mundo {
     proyectiles :: [Proyectil],
     tamanoMundo :: Size
 } deriving (Show)
+
+-- Eventos de colisión
+data CollisionEvent
+    = RobotHit Int Int     -- id del robot, id del proyectil
+    | RobotRobot Int Int   -- id de robot 1, id de robot 2
+    deriving (Show, Eq)
 
 -- 2. Refactoriza las funciones implementadas hasta ahora para usar pattern matching,
 -- listas por comprensión y cláusulas where, if-then-else, guardas o case-of cuando proceda.
@@ -183,12 +203,10 @@ mul (w, h) (sw, sh) = (w * sw, h * sh)
 
 -- checkCollision: Comprueba si dos rectángulos han colisionado utilizando el algoritmo apropiado.
 
-magnitude :: Vector -> Float
-magnitude (x,y) = sqrt (x*x + y*y)
-
 normalize :: Vector -> Vector
-normalize v@(0,0) = (0,0)
-normalize (x,y)   = let m = magnitude (x,y) in (x/m, y/m)
+normalize (x, y) =
+    let mag = sqrt (x*x + y*y)
+    in if mag == 0 then (0,0) else (x / mag, y / mag)
 
 -- Vértices de un rectángulo centrado en (cx,cy), tamaño (w,h), rotado un ángulo
 getRectVertices :: Position -> Size -> Angle -> [Position]
@@ -227,3 +245,75 @@ checkCollision posA sizeA angA posB sizeB angB =
     let va = getRectVertices posA sizeA angA
         vb = getRectVertices posB sizeB angB
     in polygonsIntersectSAT va vb
+
+-- detectRobotProjectileCollisions: Verifica qué proyectiles han colisionado con algún agente. Cuando detecte una colisión, debe generar el evento de colisión correspondiente.
+
+detectRobotProjectileCollisions = undefined
+
+-- detectRobotRobotCollisions: Comprueba y detecta las colisiones entre los diferentes robots del juego. Deberá generar el evento de colisión correspondiente.
+
+detectRobotRobotCollisions = undefined
+
+-- checkCollisions: Función principal que coordina todas las comprobaciones de colisión.
+
+checkCollisions :: [CarroCombate] -> [Proyectil] -> [CollisionEvent]
+checkCollisions carros proyectiles =
+    detectRobotProjectileCollisions carros proyectiles ++ detectRobotRobotCollisions carros
+
+-- Sistema de Memoria para Agentes
+
+-- Los agentes necesitan una memoria (implementada como diccionario) para tomar decisiones inteligentes. 
+-- Crea un tipo de datos flexible que pueda almacenar diferentes tipos de información: 
+-- enteros, cadenas de texto, puntos/coordenadas, booleanos, etc.
+
+-- Memoria base para un carro ligero
+memoriaLigero :: Memory
+memoriaLigero = Map.fromList
+    [ ("tipoCarro",    VTipoCarro Ligero)
+    , ("vida",         VInt 100)
+    , ("blindaje",     VFloat 30.0)
+    , ("tamano",       VSize (2.0, 2.0))
+    , ("alcanceVision",VFloat 20.0)
+    , ("cadencia",     VFloat 1.8)
+    , ("precision",    VFloat 0.8)
+    ]
+
+-- Memoria base para un carro pesado
+memoriaPesado :: Memory
+memoriaPesado = Map.fromList
+    [ ("tipoCarro",    VTipoCarro Pesado)
+    , ("vida",         VInt 200)
+    , ("blindaje",     VFloat 70.0)
+    , ("tamano",       VSize (3.0, 3.0))
+    , ("alcanceVision",VFloat 10.0)
+    , ("cadencia",     VFloat 2.0)
+    , ("precision",    VFloat 0.6)
+    ]
+
+-- Memoria base para un cazacarros
+memoriaCazacarros :: Memory
+memoriaCazacarros = Map.fromList
+    [ ("tipoCarro",    VTipoCarro Cazacarros)
+    , ("vida",         VInt 120)
+    , ("blindaje",     VFloat 40.0)
+    , ("tamano",       VSize (2.5, 2.0))
+    , ("alcanceVision",VFloat 15.0)
+    , ("cadencia",     VFloat 1.2)
+    , ("precision",    VFloat 0.9)
+    ]
+
+memoriaMunicionAP :: Memory
+memoriaMunicionAP = Map.fromList
+    [ ("tipoMun",  VMunicionTipo AP)
+    , ("calibre",  VFloat 0.8)
+    ]
+
+memoriaMunicionAE :: Memory
+memoriaMunicionAE = Map.fromList
+    [ ("tipoMun",  VMunicionTipo AE)
+    , ("calibre",  VFloat 0.5)
+    ]
+
+memoriaTamanoMundo :: Memory
+memoriaTamanoMundo = Map.fromList
+    [ ("tamanoMundo", VSize (50, 50)) ]
