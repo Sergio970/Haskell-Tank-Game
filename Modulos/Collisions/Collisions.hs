@@ -1,8 +1,6 @@
 module Collisions.Collisions where
 
 import Types.Types
-import Entities.Carro (CarroCombate)
-import Entities.Municion (Proyectil)
 import Physics.Physics (getRectVertices)
 import Data.List (tails)
 
