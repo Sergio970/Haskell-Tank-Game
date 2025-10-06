@@ -1,13 +1,6 @@
 module Types.Types where
 
-import System.Random (randomRIO)
-import Data.List (elemIndex, delete, nub)
 import qualified Data.Map.Strict as Map
-import Data.List (tails)
-import Entities.Carro (TipoCarro)
-import Entities.Municion (MunicionTipo)
-import Entities.Mundo (Mundo)
-
 
 type Vector = (Float, Float)
 type Position = (Float, Float)
@@ -15,6 +8,13 @@ type Point = (Float, Float)
 type Angle = Float
 type Distance = Float
 type Size = (Float, Float)
+
+-- Enums compartidos
+data TipoCarro    = Ligero | Pesado | Cazacarros
+  deriving (Show, Eq)
+
+data MunicionTipo = AP | AE
+  deriving (Show, Eq)
 
 -- Tipos de valores que puede guardar la memoria
 data Value

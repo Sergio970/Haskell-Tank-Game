@@ -1,8 +1,9 @@
 module Entities.Mundo where
 
 import qualified Data.Map.Strict as Map
-import Entities.Carro
-import Entities.Municion
+import Types.Types (Memory, Size)
+import Entities.Carro (CarroCombate, carroId)
+import Entities.Municion (Proyectil, proyectilId)
 import Entities.Tripulacion
 
 data Mundo = Mundo {
@@ -11,6 +12,7 @@ data Mundo = Mundo {
     tamanoMundo :: Size,
     memoria     :: Memory
 } deriving (Show)
+
 
 -- Funciones para gestionar el estado del mundo
 agregarCarro :: CarroCombate -> Mundo -> Mundo
