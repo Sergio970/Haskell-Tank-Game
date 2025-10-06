@@ -1,6 +1,7 @@
 module Collisions.Collisions where
 
 import Types.Types
+import Entities.Unidad
 import Physics.Physics (getRectVertices)
 import Data.List (tails)
 
