@@ -1,22 +1,16 @@
-module Entities.Carro where
+module Entities.Unidad where
 
 import qualified Data.Map.Strict as Map
 import Data.List (tails)
-
+import Physics.Physics (distanceBetween)
+import System.Random (randomRIO)
 import Types.Objeto (Objeto(..))
+
 import Types.Types
   ( Vector, Position, Size, Angle, Distance
   , Memory, Value(..)
   , TipoCarro(..), MunicionTipo(..)
   )
-
-import Physics.Physics (distanceBetween)
-import Entities.Tripulacion
-  ( Tripulacion(..)
-  , matarTripulanteAleatorioSiDanio
-  )
-import Entities.Municion (Municion)
-import Entities.Mundo (Mundo(..))
 
 -- ===============================
 -- Atributos específicos del carro
@@ -201,12 +195,6 @@ veEntre a b allCarros =
                        ) companeros
   in propio || radioCheck
 
-carrosVistosPor :: CarroCombate -> Mundo -> [CarroCombate]
-carrosVistosPor a mundo =
-  let allC         = carros mundo
-      aAplic       = aplicarEfectosTripulacion a
-      allAplicados = map aplicarEfectosTripulacion allC
-  in filter (\b -> posicionCarro b /= posicionCarro a && veEntre aAplic b allAplicados) allAplicados
 
 -- ============================================================
 -- Memorias base
@@ -269,3 +257,165 @@ getMemory key Objeto{ atributos = CarroAtributos{ memoriaCarroE = m } } =
 memoriaMundo :: Memory
 memoriaMundo = Map.fromList
   [ ("tamanoMundo", VSize (50, 50)) ]
+
+-- ============ MUNICIÓN ============
+-- ============ Tipos ============
+
+data Municion = Municion
+  { tipoMun    :: MunicionTipo
+  , calibreMun :: Float      -- mm o valor abstracto
+  , memoriaMun :: Memory
+  } deriving (Show, Eq)
+
+data Proyectil = Proyectil
+  { proyectilId        :: Int
+  , posicionProyectil  :: Position
+  , direccionProyectil :: Angle
+  , velocidadProyectil :: Vector
+  , municionProyectil  :: Municion
+  , disparadorTeam     :: Int
+  , memoriaProj        :: Memory
+  } deriving (Show)
+
+-- ============================================================
+-- Munición: penetración y daño según tipo y calibre
+-- ============================================================
+
+penetracionEstim :: Municion -> Float
+penetracionEstim (Municion { tipoMun = AP, calibreMun = c }) = c * 30.0
+penetracionEstim (Municion { tipoMun = AE, calibreMun = c }) = c * 8.0
+
+danioEstim :: Municion -> Int
+danioEstim (Municion { tipoMun = AP, calibreMun = c }) = round (c * 6.0)
+danioEstim (Municion { tipoMun = AE, calibreMun = c }) = round (c * 4.0)
+
+-- ============================================================
+-- Elección de munición y disparo
+-- ============================================================
+
+buscarMunicionPreferida :: MunicionTipo -> CarroCombate -> Maybe Int
+buscarMunicionPreferida mtype carro =
+  let ms       = municiones carro
+      indexed  = zip [0..] ms
+      filtered = filter (\(_, m) -> tipoMun m == mtype) indexed
+  in if null filtered
+       then Nothing
+       else Just (fst (maximumByCalibre filtered))
+  where
+    maximumByCalibre :: [(Int, Municion)] -> (Int, Municion)
+    maximumByCalibre =
+      foldl1 (\a@(_, m1) b@(_, m2) -> if calibreMun m1 >= calibreMun m2 then a else b)
+
+elegirMunicionPara :: CarroCombate -> CarroCombate -> Maybe Int
+elegirMunicionPara atacante objetivo =
+  let ms     = municiones atacante
+      iAP    = buscarMunicionPreferida AP atacante
+      iAE    = buscarMunicionPreferida AE atacante
+      tryAP  = case iAP of
+                 Nothing -> Nothing
+                 Just i  -> let m = ms !! i
+                            in if penetracionEstim m > blindaje objetivo then Just i else Nothing
+  in case tryAP of
+       Just i  -> Just i
+       Nothing -> iAE
+
+-- Devuelve (proyectil, atacanteSinEsaMunición)
+dispararA :: Int -> CarroCombate -> CarroCombate -> Maybe (Proyectil, CarroCombate)
+dispararA pid atacante objetivo =
+  case elegirMunicionPara atacante objetivo of
+    Nothing  -> Nothing
+    Just idx ->
+      let -- extraemos municiones para construir el proyectil y luego quitarlas
+          ms         = municiones atacante
+          m          = ms !! idx
+          pos        = posicionCarro atacante
+          dir        = direccionCarro atacante
+          velProj    = (0.0, 200.0)
+          proyectil  = Proyectil pid pos dir velProj m (team atacante) (memoriaMun m)
+          nuevaLista = take idx ms ++ drop (idx + 1) ms
+          -- actualizamos el atacante modificando el campo 'municionesE' dentro de 'atributos'
+          atacante'  =
+            case atacante of
+              obj@Objeto{ atributos = a@CarroAtributos{} } ->
+                obj { atributos = a { municionesE = nuevaLista } }
+      in Just (proyectil, atacante')
+
+-- ============================================================
+-- Aplicar impacto directo
+-- ============================================================
+
+aplicarImpactoDirecto :: Municion -> CarroCombate -> CarroCombate
+aplicarImpactoDirecto mun objetivo =
+  let pen     = penetracionEstim mun
+      dmgBase = danioEstim mun
+      dmg     = case tipoMun mun of
+                  AP -> if pen > blindaje objetivo
+                          then dmgBase * 2
+                          else round (fromIntegral dmgBase * 0.6)
+                  AE -> dmgBase
+      nuevaE  = max 0 (energia objetivo - dmg)
+  in setEnergia nuevaE objetivo
+
+-- =========================
+-- Tipos de tripulación
+-- =========================
+
+data EstadoTripulante = Vivo | Muerto
+  deriving (Show, Eq)
+
+data Tripulacion = Tripulacion
+  { comandante    :: EstadoTripulante
+  , conductor     :: EstadoTripulante
+  , artillero     :: EstadoTripulante
+  , operadorRadio :: EstadoTripulante
+  , cargador      :: EstadoTripulante
+  } deriving (Show, Eq)
+
+-- =========================
+-- Utilidades
+-- =========================
+
+todosVivos :: Tripulacion -> Bool
+todosVivos t =
+  comandante t    == Vivo &&
+  conductor t     == Vivo &&
+  artillero t     == Vivo &&
+  operadorRadio t == Vivo &&
+  cargador t      == Vivo
+
+contarVivos :: Tripulacion -> Int
+contarVivos t =
+  length $ filter (== Vivo)
+    [ comandante t, conductor t, artillero t, operadorRadio t, cargador t ]
+
+-- ============================================================
+-- Muerte aleatoria de tripulante (sin conocer Carro)
+-- ============================================================
+
+matarTripulanteAleatorioSiDanio :: Int -> Tripulacion -> IO Tripulacion
+matarTripulanteAleatorioSiDanio dmg t
+  | dmg <= 0  = return t
+  | otherwise = matarTripulanteAleatorio t
+
+matarTripulanteAleatorio :: Tripulacion -> IO Tripulacion
+matarTripulanteAleatorio t = do
+  let vivos =
+        [ ("conductor",     conductor t)
+        , ("artillero",     artillero t)
+        , ("operadorRadio", operadorRadio t)
+        , ("cargador",      cargador t)
+        , ("comandante",    comandante t)
+        ]
+      disponibles = [ r | (r, estado) <- vivos, estado == Vivo ]
+  if null disponibles
+    then return t
+    else do
+      idx <- randomRIO (0, length disponibles - 1)
+      let elegido = disponibles !! idx
+      return $ case elegido of
+        "conductor"     -> t { conductor     = Muerto }
+        "artillero"     -> t { artillero     = Muerto }
+        "operadorRadio" -> t { operadorRadio = Muerto }
+        "cargador"      -> t { cargador      = Muerto }
+        "comandante"    -> t { comandante    = Muerto }
+        _               -> t  

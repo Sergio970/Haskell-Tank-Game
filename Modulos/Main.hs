@@ -3,23 +3,9 @@ module Main where
 import qualified Data.Map.Strict as Map
 
 import Types.Objeto (Objeto(..))
+import Types.Types (TipoCarro(Ligero, Pesado, Cazacarros), MunicionTipo(AP, AE))
 
-import Entities.Carro
-  ( CarroCombate, CarroAtributos(..), TipoCarro(..)
-  , visionBase, blindajeBase, radioBase
-  , memoriaLigero, memoriaPesado, memoriaCazacarros, memoriaMundo
-  , aplicarEfectosTripulacion, carrosVistosPor
-  , aplicarDanioConMuerteAleatoria
-  )
-
-import Entities.Municion
-  ( Municion(..), MunicionTipo(..), Proyectil(..)
-  , dispararA, aplicarImpactoDirecto, municionProyectil
-  )
-
-import Entities.Tripulacion
-  ( Tripulacion(..), EstadoTripulante(..)
-  )
+import Entities.Unidad
 
 import Entities.Mundo (Mundo(..))
 
@@ -146,18 +132,7 @@ ataqueInstantaneo pid atacante objetivo =
       objetivoFinal <- aplicarDanioConMuerteAleatoria dmg objetivoAfter
       return (atacante', Just objetivoFinal)
 
--- Función para mostrar lo que ve cada carro en un mundo
-mostrarVisionDe :: Mundo -> IO ()
-mostrarVisionDe mundo = mapM_ printVision (carros mundo)
-  where
-    printVision c = do
-      let vistos      = carrosVistosPor c mundo
-          eq          = equipoE (atributos c)
-          tipo        = tipoCarroE (atributos c)
-          vistosTipos = map (tipoCarroE . atributos) vistos
-      putStrLn $
-        "Carro (team " ++ show eq ++ ", tipo " ++ show tipo ++
-        ") ve " ++ show vistosTipos
+
 
 
 -- ============================================================
@@ -168,3 +143,10 @@ mostrarVisionDe mundo = mapM_ printVision (carros mundo)
 -- - Para ejecutar todo en GHCi: cargar el archivo y usar `mostrarVisionDe mundoEjemplo`
 --   o probar `ataqueInstantaneo` entre carros de `mundoEjemplo`.
 -- ============================================================
+
+
+
+main :: IO ()
+main = do
+  putStrLn "Hola, Haskell Tank Game!"
+  -- aquí puedes iniciar tu mundo, crear carros, etc. 
