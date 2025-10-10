@@ -1,8 +1,7 @@
-module AI.Bot where
+module Bot where
 
-import Entities.Carro
-import Entities.Mundo
-import Types.Types
+import Unidad
+import Types
 
 -- ============================================================
 -- 5. DSL para acciones del Bot
@@ -17,14 +16,17 @@ data BotAction
     | Esperar                   -- No hacer nada (paso de turno)
     deriving (Show, Eq)
 
--- Bot de ejemplo: recibe el mundo y su propio carro, devuelve lista de acciones
-botEjemplo :: Mundo -> CarroCombate -> [BotAction]
-botEjemplo mundo carro =
-    let visibles = carrosVistosPor carro mundo
-    in case visibles of
-        [] -> [Esperar]  -- No ve enemigos, espera
-        (enemigo:_) ->   -- Ve al menos un enemigo, dispara al primero
-            [DispararA (carroId enemigo)]
+-- Bot de ejemplo
+botEjemplo :: Mundo -> CarroCombate -> Maybe BotAction
+botEjemplo mundo carro = -- Si no hay enemigos, devuelve Nothing. Si hay alguno, devuelve Just (DispararA id).
+    DispararA . carroId <$> listToMaybe (carrosVistosPor carro mundo)
+
+botCombinado :: Mundo -> CarroCombate -> Maybe [BotAction]
+botCombinado mundo carro = -- Une las acciones de disparar y moverse
+    pure (++) <*> atacar <*> mover
+  where
+    atacar = fmap (:[]) (botEjemplo mundo carro)
+    mover  = pure [Mover (1, 0)]
 
 {-
 Notas / Ideas de extensión:

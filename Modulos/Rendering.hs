@@ -1,3 +1,3 @@
-module Rendering.Rendering where
+module Rendering where
 
 -- Archivo para gestion de renderizado.

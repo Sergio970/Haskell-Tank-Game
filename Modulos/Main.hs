@@ -2,12 +2,10 @@ module Main where
 
 import qualified Data.Map.Strict as Map
 
-import Types.Objeto (Objeto(..))
-import Types.Types (TipoCarro(Ligero, Pesado, Cazacarros), MunicionTipo(AP, AE))
+import Objeto (Objeto(..))
+import Types (TipoCarro(Ligero, Pesado, Cazacarros), MunicionTipo(AP, AE))
 
-import Entities.Unidad
-
-import Entities.Mundo (Mundo(..))
+import Unidad
 
 -- ============================================================
 -- =========        Funciones de ejemplo              =========
@@ -119,20 +117,28 @@ mundoEjemplo = Mundo
 -- Ejemplo de uso (simulación simplificada)
 -- ============================================================
 
--- Simular que a ataca b: dispara, se crea proyectil y al impactar aplicamos daño (impacto instantáneo)
 ataqueInstantaneo :: Int -> CarroCombate -> CarroCombate -> IO (CarroCombate, Maybe CarroCombate)
-ataqueInstantaneo pid atacante objetivo =
-  case dispararA pid atacante objetivo of
-    Nothing -> return (atacante, Nothing) -- sin munición
-    Just (proj, atacante') -> do
-      let m             = municionProyectil proj
-          objetivoAfter = aplicarImpactoDirecto m objetivo
-          -- acceso vía 'atributos' (Objeto + CarroAtributos)
-          dmg           = energiaE (atributos objetivo) - energiaE (atributos objetivoAfter)
-      objetivoFinal <- aplicarDanioConMuerteAleatoria dmg objetivoAfter
+ataqueInstantaneo pid atacante objetivo = do
+  case procesarDisparo pid atacante objetivo of
+    Nothing -> return (atacante, Nothing)
+    Just (atacante', objetivoDaniado, dmg) -> do
+      objetivoFinal <- aplicarDanioConMuerteAleatoria dmg objetivoDaniado
       return (atacante', Just objetivoFinal)
 
+-- Función PURA: procesa todo el disparo e impacto
+procesarDisparo :: Int -> CarroCombate -> CarroCombate 
+                -> Maybe (CarroCombate, CarroCombate, Int)
+procesarDisparo pid atacante objetivo = do
+  (proj, atacante') <- dispararA pid atacante objetivo
+  let m = municionProyectil proj
+  objetivoAfter <- aplicarImpactoDirecto m objetivo
+  let dmg = calcularDanioRecibido objetivo objetivoAfter
+  return (atacante', objetivoAfter, dmg)
 
+-- Función PURA auxiliar para calcular daño recibido
+calcularDanioRecibido :: CarroCombate -> CarroCombate -> Int
+calcularDanioRecibido antes despues =
+  energia antes - energia despues 
 
 
 -- ============================================================

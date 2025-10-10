@@ -1,7 +1,7 @@
-module Types.Objeto
+module Objeto
   ( Objeto(..)
   ) where
-import Types.Types (Position, Vector, Angle, Size)
+import Types (Position, Vector, Angle, Size)
 
 -- Tipo genérico para objetos del juego
 data Objeto a = Objeto

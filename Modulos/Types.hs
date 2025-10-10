@@ -1,4 +1,4 @@
-module Types.Types where
+module Types where
 
 import qualified Data.Map.Strict as Map
 

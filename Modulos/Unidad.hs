@@ -1,12 +1,14 @@
-module Entities.Unidad where
+module Unidad where
 
 import qualified Data.Map.Strict as Map
-import Data.List (tails)
-import Physics.Physics (distanceBetween)
+import Data.List (tails, maximumBy)
+import Physics (distanceBetween)
 import System.Random (randomRIO)
-import Types.Objeto (Objeto(..))
+import Objeto (Objeto(..))
+import Data.Maybe (listToMaybe)
+import Data.Ord   (comparing)
 
-import Types.Types
+import Types
   ( Vector, Position, Size, Angle, Distance
   , Memory, Value(..)
   , TipoCarro(..), MunicionTipo(..)
@@ -34,9 +36,19 @@ data CarroAtributos = CarroAtributos
 -- Un carro es un Objeto con CarroAtributos como 'atributos'
 type CarroCombate = Objeto CarroAtributos
 
+{-
+“Los wrappers son funciones auxiliares que actúan como una capa de abstracción entre la lógica del juego y 
+la estructura interna de los tipos de datos. Permiten acceder de forma uniforme a los campos de los objetos, 
+sin acoplar el código a los detalles de implementación. De este modo, 
+si en el futuro cambiamos la forma en que almacenamos la información del carro o del mundo, 
+solo será necesario modificar los wrappers, no todo el resto del código.”
+-}
+
 -- ===================================
 -- Wrappers de geometría (Objeto)
 -- ===================================
+
+-- Estos acceden a los campos generales de Objeto
 
 posicionCarro  :: CarroCombate -> Position
 posicionCarro  = posicion
@@ -53,6 +65,10 @@ tamanoCarro    = tamano
 -- ===================================
 -- Wrappers de atributos del Carro
 -- ===================================
+
+-- Estos acceden al campo atributos :: CarroAtributos y, dentro de él, a sus subcampos
+-- Aquí el patrón { atributos = CarroAtributos{ carroIdE = x } }
+-- extrae el valor x del campo carroIdE que está dentro del campo atributos del Objeto
 
 carroId :: CarroCombate -> Int
 carroId Objeto{ atributos = CarroAtributos{ carroIdE = x } } = x
@@ -95,8 +111,8 @@ memoriaCarro Objeto{ atributos = CarroAtributos{ memoriaCarroE = m } } = m
 -- ===================================
 
 setEnergia :: Int -> CarroCombate -> CarroCombate
-setEnergia e obj@Objeto{ atributos = a } =
-  obj { atributos = a { energiaE = e } }
+setEnergia e obj@Objeto{ atributos = a } = -- a es el valor del campo atributos extraído del mismo objeto
+  obj { atributos = a { energiaE = e } } -- a { energiaE = e } → modificas la energía dentro de los atributos
 
 setMemoriaCarro :: Map.Map String Value -> CarroCombate -> CarroCombate
 setMemoriaCarro m obj@Objeto{ atributos = a } =
@@ -145,7 +161,7 @@ aplicarEfectosTripulacion carro@Objeto{ velocidad = (vx, vy)
                Vivo   -> (vx, vy)
       -- Cadencia: cargador muerto => más lento
       cad1 = case cargador t of
-               Muerto -> cad0 * 1.8
+               Muerto -> cad0 * 1.8 -- Aumenta la cadencia en un 80%
                Vivo   -> cad0
       -- Precisión: artillero muerto => peor
       prec1 = case artillero t of
@@ -174,9 +190,9 @@ aplicarEfectosTripulacion carro@Objeto{ velocidad = (vx, vy)
 
 aplicarDanioConMuerteAleatoria :: Int -> CarroCombate -> IO CarroCombate
 aplicarDanioConMuerteAleatoria dmg carro = do
-  let nuevaE          = max 0 (energia carro - dmg)
+  let nuevaE          = max 0 (energia carro - dmg) -- A la vida del carro le quitas el dmg hecho, como máximo la energia se puede quedar a 0 (no negativo)
       carroConEnergia = setEnergia nuevaE carro
-  t' <- matarTripulanteAleatorioSiDanio dmg (tripulacion carroConEnergia)
+  t' <- matarTripulanteAleatorioSiDanio dmg (tripulacion carroConEnergia) -- Probabilidad de matar a un tripulante según daño
   let carroConTrip = setTripulacion t' carroConEnergia
   return (aplicarEfectosTripulacion carroConTrip)
 
@@ -186,13 +202,19 @@ aplicarDanioConMuerteAleatoria dmg carro = do
 
 veEntre :: CarroCombate -> CarroCombate -> [CarroCombate] -> Bool
 veEntre a b allCarros =
-  let d_ab       = distanceBetween (posicionCarro a) (posicionCarro b)
+  let d_ab       = distanceBetween (posicionCarro a) (posicionCarro b) -- Guarda la distancia entre ambos carros
+      -- Si la distancia es menor al rango de visión, a ve a b
       propio     = d_ab <= alcanceVision a
+      -- Coge los carros c donde:
+      --    posicionCarro c /= posicionCarro a -> evita cogerse a sí mismo
+      --    cuyos team (equipoId) sea el mismo
       companeros = filter (\c -> team c == team a && posicionCarro c /= posicionCarro a) allCarros
+      -- Existe algún compañero c que esté dentro del alcance de radio de a y vea a b directamente
       radioCheck = any (\c ->
                          distanceBetween (posicionCarro a) (posicionCarro c) <= alcanceRadio a
                       && distanceBetween (posicionCarro c) (posicionCarro b) <= alcanceVision c
                        ) companeros
+  -- Devuelve si lo ve directamente o si algún copañero lo ve directamente
   in propio || radioCheck
 
 
@@ -286,6 +308,7 @@ penetracionEstim (Municion { tipoMun = AP, calibreMun = c }) = c * 30.0
 penetracionEstim (Municion { tipoMun = AE, calibreMun = c }) = c * 8.0
 
 danioEstim :: Municion -> Int
+-- round redondea al entero más cercano
 danioEstim (Municion { tipoMun = AP, calibreMun = c }) = round (c * 6.0)
 danioEstim (Municion { tipoMun = AE, calibreMun = c }) = round (c * 4.0)
 
@@ -295,66 +318,70 @@ danioEstim (Municion { tipoMun = AE, calibreMun = c }) = round (c * 4.0)
 
 buscarMunicionPreferida :: MunicionTipo -> CarroCombate -> Maybe Int
 buscarMunicionPreferida mtype carro =
-  let ms       = municiones carro
-      indexed  = zip [0..] ms
-      filtered = filter (\(_, m) -> tipoMun m == mtype) indexed
-  in if null filtered
-       then Nothing
-       else Just (fst (maximumByCalibre filtered))
+  -- fmap extrae el índice del resultado máximo si existe
+  fst <$> maximumByMay (comparing (calibreMun . snd)) seleccionadas
   where
-    maximumByCalibre :: [(Int, Municion)] -> (Int, Municion)
-    maximumByCalibre =
-      foldl1 (\a@(_, m1) b@(_, m2) -> if calibreMun m1 >= calibreMun m2 then a else b)
+    seleccionadas = filter ((== mtype) . tipoMun . snd) (zip [0..] (municiones carro))
+
+    -- Versión segura de maximumBy (evita errores en listas vacías)
+    maximumByMay :: (a -> a -> Ordering) -> [a] -> Maybe a
+    maximumByMay _ [] = Nothing
+    maximumByMay cmp xs = Just (maximumBy cmp xs)
 
 elegirMunicionPara :: CarroCombate -> CarroCombate -> Maybe Int
-elegirMunicionPara atacante objetivo =
-  let ms     = municiones atacante
-      iAP    = buscarMunicionPreferida AP atacante
-      iAE    = buscarMunicionPreferida AE atacante
-      tryAP  = case iAP of
-                 Nothing -> Nothing
-                 Just i  -> let m = ms !! i
-                            in if penetracionEstim m > blindaje objetivo then Just i else Nothing
-  in case tryAP of
-       Just i  -> Just i
-       Nothing -> iAE
+elegirMunicionPara atacante objetivo = do
+  let ms = municiones atacante
+  i <- buscarMunicionPreferida AP atacante
+  let m = ms !! i
+  if penetracionEstim m > blindaje objetivo
+    then Just i
+    else buscarMunicionPreferida AE atacante
 
 -- Devuelve (proyectil, atacanteSinEsaMunición)
 dispararA :: Int -> CarroCombate -> CarroCombate -> Maybe (Proyectil, CarroCombate)
-dispararA pid atacante objetivo =
-  case elegirMunicionPara atacante objetivo of
-    Nothing  -> Nothing
-    Just idx ->
-      let -- extraemos municiones para construir el proyectil y luego quitarlas
-          ms         = municiones atacante
-          m          = ms !! idx
-          pos        = posicionCarro atacante
-          dir        = direccionCarro atacante
-          velProj    = (0.0, 200.0)
-          proyectil  = Proyectil pid pos dir velProj m (team atacante) (memoriaMun m)
-          nuevaLista = take idx ms ++ drop (idx + 1) ms
-          -- actualizamos el atacante modificando el campo 'municionesE' dentro de 'atributos'
-          atacante'  =
-            case atacante of
-              obj@Objeto{ atributos = a@CarroAtributos{} } ->
-                obj { atributos = a { municionesE = nuevaLista } }
-      in Just (proyectil, atacante')
+dispararA pid atacante objetivo = do
+  idx <- elegirMunicionPara atacante objetivo
+  let ms         = municiones atacante
+      m          = ms !! idx
+      pos        = posicionCarro atacante
+      dir        = direccionCarro atacante
+      velProj    = (0.0, 200.0)
+      proyectil  = Proyectil pid pos dir velProj m (team atacante) (memoriaMun m)
+      nuevaLista = take idx ms ++ drop (idx + 1) ms
+      atacante'  = actualizarMuniciones atacante nuevaLista
+  pure (proyectil, atacante')
+  where
+    actualizarMuniciones c nuevas =
+      case c of
+        obj@Objeto{ atributos = a@CarroAtributos{} } ->
+          obj { atributos = a { municionesE = nuevas } }
 
 -- ============================================================
 -- Aplicar impacto directo
 -- ============================================================
 
-aplicarImpactoDirecto :: Municion -> CarroCombate -> CarroCombate
+aplicarImpactoDirecto :: Municion -> CarroCombate -> Maybe CarroCombate
 aplicarImpactoDirecto mun objetivo =
-  let pen     = penetracionEstim mun
-      dmgBase = danioEstim mun
-      dmg     = case tipoMun mun of
-                  AP -> if pen > blindaje objetivo
-                          then dmgBase * 2
-                          else round (fromIntegral dmgBase * 0.6)
-                  AE -> dmgBase
-      nuevaE  = max 0 (energia objetivo - dmg)
-  in setEnergia nuevaE objetivo
+  calcularNuevaEnergia <$> validarObjetivo objetivo
+  where
+    validarObjetivo obj = if energia obj > 0 then Just obj else Nothing
+    
+    calcularNuevaEnergia obj =
+      let dmg    = calcularDanioTotal mun obj
+          nuevaE = max 0 (energia obj - dmg)
+      in setEnergia nuevaE obj
+    
+    calcularDanioTotal m obj =
+      let pen     = penetracionEstim m
+          dmgBase = danioEstim m
+      in calcularDanio (tipoMun m) pen dmgBase (blindaje obj)
+
+-- Función PURA auxiliar para calcular el daño
+calcularDanio :: MunicionTipo -> Float -> Int -> Float -> Int
+calcularDanio AP pen dmgBase blind
+  | pen > blind = dmgBase * 2
+  | otherwise   = round (fromIntegral dmgBase * 0.6)
+calcularDanio AE _ dmgBase _ = dmgBase
 
 -- =========================
 -- Tipos de tripulación
@@ -395,27 +422,83 @@ contarVivos t =
 matarTripulanteAleatorioSiDanio :: Int -> Tripulacion -> IO Tripulacion
 matarTripulanteAleatorioSiDanio dmg t
   | dmg <= 0  = return t
-  | otherwise = matarTripulanteAleatorio t
+  | otherwise = do
+      resultado <- matarTripulanteAleatorio t
+      case resultado of
+        Nothing -> return t  -- No había vivos, devuelve tripulación original
+        Just t' -> return t' -- Devuelve tripulación con un muerto
 
-matarTripulanteAleatorio :: Tripulacion -> IO Tripulacion
+-- Función PURA: obtener lista de tripulantes vivos
+obtenerTripulantesVivos :: Tripulacion -> [String]
+obtenerTripulantesVivos t =
+  let roles = [ ("conductor",     conductor t)
+              , ("artillero",     artillero t)
+              , ("operadorRadio", operadorRadio t)
+              , ("cargador",      cargador t)
+              , ("comandante",    comandante t)
+              ]
+  in [ rol | (rol, estado) <- roles, estado == Vivo ]
+
+-- Función PURA: matar un tripulante específico
+matarTripulante :: String -> Tripulacion -> Tripulacion
+matarTripulante "conductor"     t = t { conductor     = Muerto }
+matarTripulante "artillero"     t = t { artillero     = Muerto }
+matarTripulante "operadorRadio" t = t { operadorRadio = Muerto }
+matarTripulante "cargador"      t = t { cargador      = Muerto }
+matarTripulante "comandante"    t = t { comandante    = Muerto }
+matarTripulante _               t = t
+
+-- Versión con Maybe (devuelve Nothing si no hay vivos)
+matarTripulanteAleatorio :: Tripulacion -> IO (Maybe Tripulacion)
 matarTripulanteAleatorio t = do
-  let vivos =
-        [ ("conductor",     conductor t)
-        , ("artillero",     artillero t)
-        , ("operadorRadio", operadorRadio t)
-        , ("cargador",      cargador t)
-        , ("comandante",    comandante t)
-        ]
-      disponibles = [ r | (r, estado) <- vivos, estado == Vivo ]
-  if null disponibles
-    then return t
-    else do
+  case obtenerTripulantesVivos t of
+    [] -> return Nothing  -- No hay vivos
+    disponibles -> do
       idx <- randomRIO (0, length disponibles - 1)
       let elegido = disponibles !! idx
-      return $ case elegido of
-        "conductor"     -> t { conductor     = Muerto }
-        "artillero"     -> t { artillero     = Muerto }
-        "operadorRadio" -> t { operadorRadio = Muerto }
-        "cargador"      -> t { cargador      = Muerto }
-        "comandante"    -> t { comandante    = Muerto }
-        _               -> t  
+      return (Just (matarTripulante elegido t))
+
+-- ============================================================
+-- Definición del Mundo
+-- ============================================================
+
+data Mundo = Mundo {
+    carros      :: [CarroCombate],
+    proyectiles :: [Proyectil],
+    tamanoMundo :: Size,
+    memoria     :: Memory
+} deriving (Show)
+
+-- Funciones para gestionar el estado del mundo
+agregarCarro :: CarroCombate -> Mundo -> Mundo
+agregarCarro carro mundo = mundo { carros = carro : carros mundo }
+
+agregarProyectil :: Proyectil -> Mundo -> Mundo
+agregarProyectil proyectil mundo = mundo { proyectiles = proyectil : proyectiles mundo }
+
+removerCarro :: Int -> Mundo -> Mundo
+removerCarro cid mundo = mundo { carros = filter ((/= cid) . carroId) (carros mundo) }
+
+removerProyectil :: Int -> Mundo -> Mundo
+removerProyectil pid mundo = mundo { proyectiles = filter ((/= pid) . proyectilId) (proyectiles mundo) }
+
+carrosVistosPor :: CarroCombate -> Mundo -> [CarroCombate]
+carrosVistosPor carro mundo =
+  let allC         = carros mundo
+      aAplic       = aplicarEfectosTripulacion carro
+      allAplicados = map aplicarEfectosTripulacion allC
+      visible b    = posicionCarro b /= posicionCarro carro && veEntre aAplic b allAplicados
+  in filter visible allAplicados
+
+  -- Función que muestra lo que ve cada carro
+mostrarVisionDe :: Mundo -> IO ()
+mostrarVisionDe mundo = mapM_ printVision (carros mundo)
+  where
+    printVision c = do
+      let vistos      = carrosVistosPor c mundo
+          eq          = team c
+          tipo        = tipoCarro c
+          vistosTipos = map tipoCarro vistos
+      putStrLn $
+        "Carro (team " ++ show eq ++ ", tipo " ++ show tipo ++
+        ") ve " ++ show vistosTipos
