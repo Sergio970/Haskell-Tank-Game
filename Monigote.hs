@@ -52,6 +52,7 @@ data GameState = GameState
   , onGround   :: Bool     -- si está en el suelo
   , leftDown   :: Bool     -- tecla izquierda presionada
   , rightDown  :: Bool     -- tecla derecha presionada
+  , jumpDown   :: Bool     -- tecla salto presionada
   , animTimer  :: Float    -- temporizador para animación de caminar
   } deriving (Show)
 
@@ -65,6 +66,7 @@ initialState = GameState
   , onGround  = True
   , leftDown  = False
   , rightDown = False
+  , jumpDown  = False
   , animTimer = 0
   }
 
@@ -158,14 +160,16 @@ handleEvent evt gs = case evt of
 
   -- Salto: sólo al pulsar (Down) y si está en suelo
   EventKey (SpecialKey KeyUp) Down _ _ ->
-    if onGround gs
-      then gs { velY = jumpImpulse, onGround = False }
-      else gs
+    gs { jumpDown = True }
+
+  EventKey (SpecialKey KeyUp) Up _ _ ->
+    gs { jumpDown = False }
 
   EventKey (Char 'w') Down _ _ ->
-    if onGround gs
-      then gs { velY = jumpImpulse, onGround = False }
-      else gs
+    gs { jumpDown = True }
+
+  EventKey (Char 'w') Up _ _ ->
+    gs { jumpDown = False }
 
   _ -> gs
 
@@ -191,10 +195,12 @@ update dt gs =
     newX = posX gs + newVx * dt
     newY = posY gs + newVy * dt
 
-    -- colisión con suelo
+    -- colisión con suelo y salto automático
     (finalY, finalVy, finalOnGround) =
       if newY <= groundY
-        then (groundY, 0, True)
+        then (groundY, 
+              if jumpDown gs then jumpImpulse else 0,  -- saltar si tecla presionada
+              True)
         else (newY, newVy, False)
 
     -- limitar en X
@@ -226,7 +232,7 @@ update dt gs =
 -- =========================
 main :: IO ()
 main = play
-  (InWindow "Monigote - Práctica Gloss" (windowWidth, windowHeight) (100,100))
+  (InWindow "Monigote - Practica Gloss" (windowWidth, windowHeight) (100,100))
   (makeColor 0.95 0.95 0.95 1)  -- color fondo
   fps
   initialState
