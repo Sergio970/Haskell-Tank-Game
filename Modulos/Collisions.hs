@@ -51,8 +51,6 @@ la fase posterior debe consumir esos eventos y actualizar el Mundo
 
 -- detectRobotProjectileCollisions: compara cada carro con cada proyectil
 
--- REESCRIBIR
-
 detectRobotProjectileCollisions :: [CarroCombate] -> [Proyectil] -> [CollisionEvent]
 detectRobotProjectileCollisions carros proyectiles =
   concatMap (\car -> mapMaybe (colisionCon car) proyectiles) carros
@@ -66,8 +64,6 @@ detectRobotProjectileCollisions carros proyectiles =
 
 
 -- detectRobotRobotCollisions: compara cada par de carros (sin repetir)
-
--- REESCRIBIR
 
 detectRobotRobotCollisions :: [CarroCombate] -> [CollisionEvent]
 detectRobotRobotCollisions carros =
