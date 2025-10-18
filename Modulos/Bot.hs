@@ -3,6 +3,8 @@ module Bot where
 import Unidad
 import Types
 
+import Data.Maybe (listToMaybe)
+
 -- ============================================================
 -- 5. DSL para acciones del Bot
 -- ============================================================

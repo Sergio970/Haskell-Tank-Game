@@ -80,4 +80,4 @@ detectRobotRobotCollisions carros =
 -- checkCollisions: combinación de ambas
 checkCollisions :: [CarroCombate] -> [Proyectil] -> [CollisionEvent]
 checkCollisions carros proyectiles =
-    (++) <$> detectRobotProjectileCollisions carros proyectiles <*> detectRobotRobotCollisions carros
+    detectRobotProjectileCollisions carros proyectiles ++ detectRobotRobotCollisions carros
