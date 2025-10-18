@@ -2,7 +2,7 @@ module Collisions where
 
 import Types
 import Unidad
-import Physics (getRectVertices)
+import Physics
 import Data.List (tails)
 
 import Data.Maybe (mapMaybe)
