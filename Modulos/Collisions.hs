@@ -2,7 +2,7 @@ module Collisions where
 
 import Types
 import Unidad
-import Physics (getRectVertices)
+import Physics
 import Data.List (tails)
 
 import Data.Maybe (mapMaybe)
@@ -80,4 +80,4 @@ detectRobotRobotCollisions carros =
 -- checkCollisions: combinación de ambas
 checkCollisions :: [CarroCombate] -> [Proyectil] -> [CollisionEvent]
 checkCollisions carros proyectiles =
-    (++) <$> detectRobotProjectileCollisions carros proyectiles <*> detectRobotRobotCollisions carros
+    detectRobotProjectileCollisions carros proyectiles ++ detectRobotRobotCollisions carros

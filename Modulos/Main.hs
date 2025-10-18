@@ -1,11 +1,18 @@
 module Main where
 
 import qualified Data.Map.Strict as Map
+import Data.Maybe (mapMaybe, listToMaybe)
+import Control.Monad (foldM)
+
 
 import Objeto (Objeto(..))
-import Types (TipoCarro(Ligero, Pesado, Cazacarros), MunicionTipo(AP, AE))
+import Types (TipoCarro(Ligero, Pesado, Cazacarros), MunicionTipo(AP, AE), Vector)
 
 import Unidad
+
+import Bot (botCombinado, BotAction(..))
+import Collisions (CollisionEvent(..), checkCollisions)
+import Physics (polygonsIntersectSAT)
 
 -- ============================================================
 -- =========        Funciones de ejemplo              =========
@@ -150,9 +157,96 @@ calcularDanioRecibido antes despues =
 --   o probar `ataqueInstantaneo` entre carros de `mundoEjemplo`.
 -- ============================================================
 
-
+data GameState = GameState
+  { mundo :: Mundo
+  , tiempo :: Float
+  , ronda :: Int
+  }
 
 main :: IO ()
 main = do
   putStrLn "Hola, Haskell Tank Game!"
   -- aquí puedes iniciar tu mundo, crear carros, etc. 
+
+updateGame :: Float -> GameState -> IO GameState
+updateGame dt gs = do
+  nuevoMundo <- bucleTorneo dt (mundo gs)
+  return gs { mundo = nuevoMundo }
+
+-- ============================================================
+-- Bucle principal del juego (lógica del torneo)
+-- ============================================================
+
+bucleTorneo :: Float -> Mundo -> IO Mundo
+bucleTorneo dt mundoActual = do
+  -- Cada bot decide sus acciones según la situación actual del mundo
+  let decisiones = mapMaybe (\car -> fmap (\x -> (car, x)) (botCombinado mundoActual car)) (carros mundoActual)
+
+  -- Se aplican todas las acciones (mover, disparar, recargar, etc.)
+  mundoTrasAcciones <- foldM aplicarAccionesBot mundoActual decisiones
+
+  -- Se detectan colisiones entre proyectiles y tanques
+  let eventos = checkCollisions (carros mundoTrasAcciones) (proyectiles mundoTrasAcciones)
+
+  -- Se aplican los efectos de esas colisiones (daño, destrucción, etc.)
+  mundoFinal <- aplicarEventos eventos mundoTrasAcciones
+
+  return mundoFinal
+
+-- Aplicar las acciones que devuelve cada bot
+aplicarAccionesBot :: Mundo -> (CarroCombate, [BotAction]) -> IO Mundo
+aplicarAccionesBot m (carro, acts) = foldM aplicar m acts
+  where
+    aplicar mundo (DispararA objetivoId) =
+      case buscarCarro objetivoId (carros mundo) of
+        Just obj ->
+          let pid = length (proyectiles mundo) + 1
+          in case dispararA pid carro obj of
+              Just (proj, carroSinMun) ->
+                return $ agregarProyectil proj
+                       $ reemplazarCarro carroSinMun (carros mundo) mundo
+              Nothing -> return mundo
+        Nothing -> return mundo
+    aplicar mundo (Mover v) = return $ mundo { carros = map (moverCarro v) (carros mundo) }
+    aplicar mundo _ = return mundo
+
+-- Aplica los efectos de las colisiones
+aplicarEventos :: [CollisionEvent] -> Mundo -> IO Mundo
+aplicarEventos eventos m = foldM procesarEvento m eventos
+  where
+    procesarEvento mundo (RobotHit carroId pid) = do
+      case (buscarCarro carroId (carros mundo), buscarProyectil pid (proyectiles mundo)) of
+        (Just car, Just proj) -> do
+          let mun = municionProyectil proj
+          case aplicarImpactoDirecto mun car of
+            Just carDaño -> do
+              carFinal <- aplicarDanioConMuerteAleatoria (danioEstim mun) carDaño
+              return $ removerProyectil pid
+                     $ reemplazarCarro carFinal (carros mundo) mundo
+            Nothing -> return $ removerProyectil pid mundo
+        _ -> return mundo
+    procesarEvento mundo (RobotRobot _ _) = return mundo
+
+-- Helpers auxiliares
+-- safeHead es polimórfica
+safeHead :: [a] -> Maybe a
+safeHead []    = Nothing
+safeHead (x:_) = Just x
+
+-- buscarCarro: busca por id en una lista de CarroCombate
+buscarCarro :: Int -> [CarroCombate] -> Maybe CarroCombate
+buscarCarro cid = safeHead . filter ((== cid) . carroId)
+
+-- buscarProyectil: busca por id en una lista de Proyectil
+buscarProyectil :: Int -> [Proyectil] -> Maybe Proyectil
+buscarProyectil pid = safeHead . filter ((== pid) . proyectilId)
+
+-- reemplazarCarro: sustituye (o añade) un carro en la lista dentro del Mundo
+reemplazarCarro :: CarroCombate -> [CarroCombate] -> Mundo -> Mundo
+reemplazarCarro c cs m = m { carros = c : filter ((/= carroId c) . carroId) cs }
+
+-- moverCarro: aplica un vector de desplazamiento al carro
+moverCarro :: Vector -> CarroCombate -> CarroCombate
+moverCarro (dx, dy) c =
+  let (x, y) = posicionCarro c
+  in c { posicion = (x + dx, y + dy) }
