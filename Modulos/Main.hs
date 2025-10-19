@@ -2,7 +2,7 @@ module Main where
 
 import qualified Data.Map.Strict as Map
 
-    
+
 import Data.Maybe (mapMaybe)
 import Control.Monad (foldM)
 
@@ -31,7 +31,7 @@ carroLigero cid equipo pos =
       { posicion  = pos
       , direccion = 0.0
       , velocidad = (10.0, 0.0)
-      , tamano    = (3.0, 3.0)
+      , tamano    = (4.0, 3.0)
       , atributos = CarroAtributos
         { carroIdE        = cid
         , equipoE         = equipo
@@ -57,7 +57,7 @@ carroPesado cid equipo pos =
       { posicion  = pos
       , direccion = 0.0
       , velocidad = (4.0, 0.0)
-      , tamano    = (5.0, 5.0)
+      , tamano    = (7.0, 5.0)
       , atributos = CarroAtributos
           { carroIdE        = cid
           , equipoE         = equipo
@@ -83,7 +83,7 @@ cazacarros cid equipo pos =
       { posicion  = pos
       , direccion = 0.0
       , velocidad = (7.0, 0.0)
-      , tamano    = (4.0, 4.0)
+      , tamano    = (6.0, 4.0)
       , atributos = CarroAtributos
           { carroIdE        = cid
           , equipoE         = equipo
@@ -104,13 +104,13 @@ cazacarros cid equipo pos =
 
     -- Instancias de ejemplo
 c1 :: CarroCombate
-c1 = carroLigero 1 1 (10,10)
+c1 = carroLigero 1 1 (100,10)
 
 c2 :: CarroCombate
-c2 = carroPesado 2 1 (40,20)
+c2 = carroPesado 2 1 (-200,20)
 
 c3 :: CarroCombate
-c3 = cazacarros 3 2 (200,20)
+c3 = cazacarros 3 2 (20,-80)
 
     -- Mundo de ejemplo con dos equipos
 mundoEjemplo :: Mundo
