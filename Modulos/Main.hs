@@ -267,7 +267,7 @@ aplicarAccionesBot m (carro, acts) = foldM aplicar m acts
                       $ reemplazarCarro carroSinMun (carros mundo) mundo
               Nothing -> return mundo
         Nothing -> return mundo
-    aplicar mundo (Mover v) = return $ mundo { carros = map (moverCarro v) (carros mundo) }
+    aplicar mundo (Mover v) = return $ mundo { carros = map (\c -> if carroId c == carroId carro then moverCarro v c else c) (carros mundo) }
     aplicar mundo _ = return mundo
 
   -- Aplica los efectos de las colisiones
