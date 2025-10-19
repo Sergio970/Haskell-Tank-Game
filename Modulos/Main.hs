@@ -104,22 +104,22 @@ cazacarros cid equipo pos =
 
     -- Instancias de ejemplo
 c1 :: CarroCombate
-c1 = carroLigero 1 1 (-436,-500)
+c1 = carroLigero 1 1 (10,10)
 
 c2 :: CarroCombate
-c2 = carroPesado 2 1 (-144,460)
+c2 = carroPesado 2 3 (40,50)
 
 c3 :: CarroCombate
-c3 = cazacarros 3 2 (211,394)
+c3 = cazacarros 3 2 (240,45)
 
 c4 :: CarroCombate
-c4 = carroLigero 4 3 (-338,-13)
+c4 = carroLigero 4 3 (211,-13)
 
 c5 :: CarroCombate
-c5 = carroPesado 5 3 (-134,-209)
+c5 = carroPesado 5 1 (-134,-209)
 
 c6 :: CarroCombate
-c6 = cazacarros 6 3 (309,355)
+c6 = cazacarros 6 3 (309,20)
 
     -- Mundo de ejemplo con dos equipos
 mundoEjemplo :: Mundo
