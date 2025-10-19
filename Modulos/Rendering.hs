@@ -4,7 +4,6 @@ import Main
 import Graphics.Gloss
 import Graphics.Gloss.Interface.IO.Game
 import Unidad
-import System.Exit (exitSuccess)
 import Types (TipoCarro(..))
 import Objeto (Objeto(..))
 
@@ -85,11 +84,7 @@ handleEvent _ gs = pure gs
 
 -- Avance de simulación reutilizando Main.updateGame
 stepGame :: Float -> GameState -> IO GameState
-stepGame dt gs = do
-  gs' <- updateGame dt gs
-  if torneoTerminado (mundo gs')
-    then exitSuccess >> pure gs'
-    else pure gs'
+stepGame dt gs = updateGame dt gs
 
 -- Avance manual: no avanza con el tiempo, solo con espacio
 handleEventPause :: Event -> GameState -> IO GameState
