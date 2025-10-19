@@ -10,7 +10,7 @@ import Objeto (Objeto(..))
 
 -- Ventana y parámetros de render
 window :: Display
-window = InWindow "Haskell Tank Game" (800, 800) (80, 80)
+window = InWindow "Haskell Tank Game" (1000, 1000) (80, 80)
 
 backgroundColor :: Color
 backgroundColor = black
@@ -47,13 +47,6 @@ drawTank m c =
   in Color col $ Translate sx sy (Rotate ang tankPic)
 
 -- Barra de vida sobre el tanque
-maxEnergia :: CarroCombate -> Float
-maxEnergia c =
-  case tipoCarro c of
-    Ligero     -> 100
-    Pesado     -> 300
-    Cazacarros -> 180
-
 drawHealthBar :: Mundo -> CarroCombate -> Picture
 drawHealthBar m c =
   let (sx, sy) = toScreen m (posicionCarro c)
@@ -61,7 +54,7 @@ drawHealthBar m c =
       barW = 30
       barH = 4
       e    = fromIntegral (energia c) :: Float
-      eMax = maxEnergia c
+      eMax = fromIntegral (energiaE (atributos c)) :: Float
       r    = max 0 (min 1 (e / eMax))
       greenW = r * barW
       redW   = (1 - r) * barW

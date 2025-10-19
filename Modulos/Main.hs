@@ -104,20 +104,29 @@ cazacarros cid equipo pos =
 
     -- Instancias de ejemplo
 c1 :: CarroCombate
-c1 = carroLigero 1 1 (100,10)
+c1 = carroLigero 1 1 (-436,-500)
 
 c2 :: CarroCombate
-c2 = carroPesado 2 1 (-200,20)
+c2 = carroPesado 2 1 (-144,460)
 
 c3 :: CarroCombate
-c3 = cazacarros 3 2 (20,-80)
+c3 = cazacarros 3 2 (211,394)
+
+c4 :: CarroCombate
+c4 = carroLigero 4 3 (-338,-13)
+
+c5 :: CarroCombate
+c5 = carroPesado 5 3 (-134,-209)
+
+c6 :: CarroCombate
+c6 = cazacarros 6 3 (309,355)
 
     -- Mundo de ejemplo con dos equipos
 mundoEjemplo :: Mundo
 mundoEjemplo = Mundo
-  { carros      = [c1, c2, c3]
+  { carros      = [c1, c2, c3, c4, c5, c6]
   , proyectiles = []
-  , tamanoMundo = (1000, 1000)
+  , tamanoMundo = (500, 500)
   , memoria     = memoriaMundo
   }
 
