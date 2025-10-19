@@ -104,12 +104,12 @@ drawGame gs =
              Translate 0 0 $ rectangleSolid bodyW bodyH
 
     brazoIzq = Translate (-bodyW/2 - 4) (bodyH/8) $
-               Rotate (-10) $
+               Rotate 10 $
                Translate 0 (armOffset) $
                rectangleSolid 6 armLen
 
     brazoDer = Translate (bodyW/2 + 4) (bodyH/8) $
-               Rotate 10 $
+               Rotate (-10) $
                Translate 0 (-armOffset) $
                rectangleSolid 6 armLen
 
@@ -232,7 +232,7 @@ update dt gs =
 -- =========================
 main :: IO ()
 main = play
-  (InWindow "Monigote - Practica Gloss" (windowWidth, windowHeight) (100,100))
+  (InWindow "Monigote - Práctica Gloss" (windowWidth, windowHeight) (100,100))
   (makeColor 0.95 0.95 0.95 1)  -- color fondo
   fps
   initialState
