@@ -82,7 +82,7 @@ apuntarHacia carro objetivo =
   let (x1, y1) = posicionCarro carro
       (x2, y2) = posicionCarro objetivo
       anguloActual  = direccionCarro carro
-      anguloObjetivo = atan2 (y2 - y1) (x2 - x1)
+      anguloObjetivo = rad2deg (atan2 (y2 - y1) (x2 - x1))
       delta = anguloObjetivo - anguloActual
   in Girar (delta * 20)
 

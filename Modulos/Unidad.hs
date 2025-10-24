@@ -2,7 +2,7 @@ module Unidad where
 
 import qualified Data.Map.Strict as Map
 import Data.List (tails, maximumBy)
-import Physics (distanceBetween)
+import Physics (distanceBetween, deg2rad)
 import System.Random (randomRIO)
 import Objeto (Objeto(..))
 import Data.Maybe (listToMaybe)
@@ -190,10 +190,8 @@ aplicarEfectosTripulacion carro@Objeto{ velocidad = (vx, vy)
 
 aplicarDanioConMuerteAleatoria :: Int -> CarroCombate -> IO CarroCombate
 aplicarDanioConMuerteAleatoria dmg carro = do
-  let nuevaE          = max 0 (energia carro - dmg) -- A la vida del carro le quitas el dmg hecho, como máximo la energia se puede quedar a 0 (no negativo)
-      carroConEnergia = setEnergia nuevaE carro
-  t' <- matarTripulanteAleatorioSiDanio dmg (tripulacion carroConEnergia) -- Probabilidad de matar a un tripulante según daño
-  let carroConTrip = setTripulacion t' carroConEnergia
+  t' <- matarTripulanteAleatorioSiDanio dmg (tripulacion carro) -- Probabilidad de matar a un tripulante según daño
+  let carroConTrip = setTripulacion t' carro
   return (aplicarEfectosTripulacion carroConTrip)
 
 -- ============================================================
@@ -343,10 +341,18 @@ dispararA pid atacante objetivo = do
   idx <- elegirMunicionPara atacante objetivo
   let ms         = municiones atacante
       m          = ms !! idx
-      pos        = posicionCarro atacante
-      dir        = direccionCarro atacante
-      velProj    = (0.0, 200.0)
-      proyectil  = Proyectil pid pos dir velProj m (team atacante) (memoriaMun m)
+      dirGrados   = direccionCarro atacante -- El ángulo del tanque en grados
+      dirRad      = deg2rad dirGrados       -- Convertimos a radianes para los cálculos
+      -- Obtenemos el tamaño y posición del tanque que dispara
+      (tankWidth, _) = tamanoCarro atacante
+      (tankX, tankY) = posicionCarro atacante
+      -- Calculamos una posición inicial justo delante del cañón del tanque.
+      -- (La mitad del ancho del tanque + un pequeño espacio)
+      offset      = tankWidth / 2 + 1.0
+      pos         = (tankX + offset * cos dirRad, tankY + offset * sin dirRad)
+      -- Asignamos la velocidad usando el mismo ángulo en radianes
+      velProj     = (300 * cos dirRad, 300 * sin dirRad)
+      proyectil  = Proyectil pid pos dirGrados velProj m (team atacante) (memoriaMun m)
       nuevaLista = take idx ms ++ drop (idx + 1) ms
       atacante'  = actualizarMuniciones atacante nuevaLista
   pure (proyectil, atacante')

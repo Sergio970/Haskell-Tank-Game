@@ -58,12 +58,14 @@ detectRobotProjectileCollisions carros proyectiles =
   concatMap (\car -> mapMaybe (colisionCon car) proyectiles) carros
   where
     colisionCon car proj =
-      let (posC, szC, angC) = (posicionCarro car, tamanoCarro car, direccionCarro car)
-          (posP, szP, angP) = proyectilAsRect proj
-      in if checkCollision posC szC angC posP szP angP
-            then Just (RobotHit (carroId car) (proyectilId proj))
-            else Nothing
-
+      if team car == disparadorTeam proj
+        then Nothing -- Si son del mismo equipo, no hay colisión.
+        else
+          let (posC, szC, angC) = (posicionCarro car, tamanoCarro car, direccionCarro car)
+              (posP, szP, angP) = proyectilAsRect proj
+          in if checkCollision posC szC angC posP szP angP
+                then Just (RobotHit (carroId car) (proyectilId proj))
+                else Nothing
 
 -- detectRobotRobotCollisions: compara cada par de carros (sin repetir)
 

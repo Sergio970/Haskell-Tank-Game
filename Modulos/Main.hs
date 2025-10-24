@@ -13,6 +13,7 @@ import Unidad
 
 import Bot (botEstrategico, BotAction(..))
 import Collisions (CollisionEvent(..), checkCollisions)
+import Physics (updatePosition)
 
   -- ============================================================
   -- =========        Funciones de ejemplo              =========
@@ -250,23 +251,42 @@ equipoGanador m =
 
 bucleTorneo :: Float -> Mundo -> IO Mundo
 bucleTorneo dt mundoActual = do
-  -- Cada bot decide sus acciones según la situación actual del mundo
+  -- 1. Los bots deciden sus acciones
   let decisiones = mapMaybe (\car -> fmap (\x -> (car, x)) (botEstrategico mundoActual car)) (carros mundoActual)
 
-  -- Se aplican todas las acciones (mover, disparar, recargar, etc.)
-  mundoTrasAcciones <- foldM aplicarAccionesBot mundoActual decisiones
+  -- 2. Se aplican las acciones (mover, disparar, etc.)
+  -- Usamos (aplicarAccionesBot dt) para pasar el tiempo a la función que procesa las acciones.
+  mundoTrasAcciones <- foldM (aplicarAccionesBot dt) mundoActual decisiones
 
-  -- Se detectan colisiones entre proyectiles y tanques
-  let eventos = checkCollisions mundoTrasAcciones
+  -- 3. La física se aplica a TODOS los objetos del mundo
+  let mundoConTanquesMovidos = actualizarTanques dt mundoTrasAcciones
+  let mundoConProyectilesMovidos = actualizarProyectiles dt mundoConTanquesMovidos
 
-  -- Se aplican los efectos de esas colisiones (daño, destrucción, etc.)
-  mundoFinal <- aplicarEventos eventos mundoTrasAcciones
+  -- 4. Se gestionan las colisiones y sus efectos
+  let eventos = checkCollisions mundoConProyectilesMovidos
+  mundoFinal <- aplicarEventos eventos mundoConProyectilesMovidos
 
   return mundoFinal
 
+  -- Actualiza la posición de todos los tanques en el mundo
+actualizarTanques :: Float -> Mundo -> Mundo
+actualizarTanques dt mundo =
+  let cs = carros mundo
+      -- Mapeamos cada tanque a una nueva versión con la posición actualizada
+      cs' = map (\c -> c { posicion = updatePosition dt (posicion c) (velocidad c) }) cs
+  in mundo { carros = cs' }
+
+-- Actualiza la posición de todos los proyectiles en el mundo
+actualizarProyectiles :: Float -> Mundo -> Mundo
+actualizarProyectiles dt mundo =
+  let ps = proyectiles mundo
+      -- Mapeamos cada proyectil a una nueva versión de sí mismo con la posición actualizada
+      ps' = map (\p -> p { posicionProyectil = updatePosition dt (posicionProyectil p) (velocidadProyectil p) }) ps
+  in mundo { proyectiles = ps' }
+
 -- Aplicar las acciones que devuelve cada bot
-aplicarAccionesBot :: Mundo -> (CarroCombate, [BotAction]) -> IO Mundo
-aplicarAccionesBot m (carro, acts) = foldM aplicar m acts
+aplicarAccionesBot :: Float -> Mundo -> (CarroCombate, [BotAction]) -> IO Mundo
+aplicarAccionesBot dt m (carro, acts) = foldM aplicar m acts
   where
     aplicar mundo (DispararA objetivoId) =
       case buscarCarro objetivoId (carros mundo) of
@@ -278,7 +298,21 @@ aplicarAccionesBot m (carro, acts) = foldM aplicar m acts
                       $ reemplazarCarro carroSinMun (carros mundo) mundo
               Nothing -> return mundo
         Nothing -> return mundo
-    aplicar mundo (Mover v) = return $ mundo { carros = map (\c -> if carroId c == carroId carro then moverCarro v c else c) (carros mundo) }
+
+    -- aplica la función moverCarro al carro que tenga el mismo ID que el que realiza la acción
+    aplicar mundo (Mover dir) =
+      let velocidadMax = fst (velocidad carro) -- Extrae la velocidad máxima del tanque
+          (dirX, dirY) = dir                   -- Dirección que ha elegido el bot
+          -- Calculamos el nuevo vector de velocidad
+          nuevaVel = (dirX * velocidadMax, dirY * velocidadMax)
+          -- Actualizamos el tanque con su nueva velocidad
+          carroActualizado = carro { velocidad = nuevaVel }
+      in return $ reemplazarCarro carroActualizado (carros mundo) mundo
+
+    aplicar mundo (Girar angulo) =
+      let c' = carro { direccion = direccion carro + angulo }
+      in return $ reemplazarCarro c' (carros mundo) mundo
+
     aplicar mundo _ = return mundo
 
 -- Aplica los efectos de las colisiones
@@ -290,12 +324,15 @@ aplicarEventos eventos m = foldM procesarEvento m eventos
         (Just car, Just proj) -> do
           let mun = municionProyectil proj
           case aplicarImpactoDirecto mun car of
-            Just carDaño -> do
-              carFinal <- aplicarDanioConMuerteAleatoria (danioEstim mun) carDaño
+            Just carDanado -> do
+              -- Calculamos el daño REAL infligido (vida antes - vida después)
+              let danoReal = energia car - energia carDanado
+              carFinal <- aplicarDanioConMuerteAleatoria danoReal carDanado
               return $ removerProyectil pid
                     $ reemplazarCarro carFinal (carros mundo) mundo
             Nothing -> return $ removerProyectil pid mundo
         _ -> return mundo
+
     procesarEvento mundo (RobotRobot id1 id2) = do
       case (buscarCarro id1 (carros mundo), buscarCarro id2 (carros mundo)) of
         (Just c1, Just c2) -> do
@@ -351,7 +388,11 @@ reemplazarCarro :: CarroCombate -> [CarroCombate] -> Mundo -> Mundo
 reemplazarCarro c cs m = m { carros = c : filter ((/= carroId c) . carroId) cs }
 
 -- moverCarro: aplica un vector de desplazamiento al carro
-moverCarro :: Vector -> CarroCombate -> CarroCombate
-moverCarro (dx, dy) c =
-  let (x, y) = posicionCarro c
-  in c { posicion = (x + dx, y + dy) }
+moverCarro :: Float -> Vector -> CarroCombate -> CarroCombate
+moverCarro dt direccion c =
+  let (velocidadLineal, _) = velocidad c -- Usamos la velocidad definida en el tanque
+      (dirX, dirY) = direccion
+      (posX, posY) = posicionCarro c
+      -- La nueva posición es: pos_actual + direccion * velocidad * tiempo
+      nuevaPos = (posX + dirX * velocidadLineal * dt, posY + dirY * velocidadLineal * dt)
+  in c { posicion = nuevaPos }

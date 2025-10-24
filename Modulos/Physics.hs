@@ -2,6 +2,14 @@ module Physics where
 
 import Types
 
+-- Convierte radianes a grados
+rad2deg :: Float -> Float
+rad2deg rad = rad * (180.0 / pi)
+
+-- Convierte grados a radianes
+deg2rad :: Float -> Float
+deg2rad deg = deg * (pi / 180.0)
+
 -- Operaciones vectoriales
 addVec, subVec :: Vector -> Vector -> Vector
 addVec (x1,y1) (x2,y2) = (x1+x2, y1+y2)
