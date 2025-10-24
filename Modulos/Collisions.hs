@@ -10,6 +10,8 @@ import Data.Maybe (mapMaybe)
 data CollisionEvent
   = RobotHit Int Int     -- id del carro, id del proyectil
   | RobotRobot Int Int   -- id de carro 1, id de carro 2
+  | FronteraCarro Int     -- carro con id tocó frontera
+  | FronteraProyectil Int -- proyectil con id tocó frontera
   deriving (Show, Eq)
 
 -- checkCollision: Comprueba si dos rectángulos han colisionado utilizando el algoritmo apropiado.
@@ -77,7 +79,43 @@ detectRobotRobotCollisions carros =
             then Just (RobotRobot (carroId c1) (carroId c2))
             else Nothing
 
--- checkCollisions: combinación de ambas
-checkCollisions :: [CarroCombate] -> [Proyectil] -> [CollisionEvent]
-checkCollisions carros proyectiles =
-    detectRobotProjectileCollisions carros proyectiles ++ detectRobotRobotCollisions carros
+-- detectWorldCollisions: compara cada carro y proyectil con los límites del mundo
+
+detectWorldCollisions :: Mundo -> [CollisionEvent]
+detectWorldCollisions mundo = 
+  let (maxX, maxY) = tamanoMundo mundo
+      mitadX = maxX / 2
+      mitadY = maxY / 2
+
+      fueraCarro c =
+        let (x, y) = posicionCarro c
+        in abs x > mitadX || abs y > mitadY
+
+      fueraProy p =
+        let (x, y) = posicionProyectil p
+        in abs x > mitadX || abs y > mitadY
+
+      eventosCarros =
+        [ FronteraCarro (carroId c)
+        | c <- carros mundo, fueraCarro c
+        ]
+
+      eventosProyectiles =
+        [ FronteraProyectil (proyectilId p)
+        | p <- proyectiles mundo, fueraProy p
+        ]
+
+  in eventosCarros ++ eventosProyectiles
+
+-- ============================================================
+-- Detección de colisiones general (entre robots, proyectiles y fronteras)
+-- ============================================================
+
+checkCollisions :: Mundo -> [CollisionEvent]
+checkCollisions mundo =
+  let cs  = carros mundo
+      ps  = proyectiles mundo
+      ev1 = detectRobotProjectileCollisions cs ps
+      ev2 = detectRobotRobotCollisions cs
+      ev3 = detectWorldCollisions mundo
+  in ev1 ++ ev2 ++ ev3

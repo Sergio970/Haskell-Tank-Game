@@ -100,12 +100,14 @@ stepGamePause _ = pure
 -- Punto de entrada pausado: avanza 1 tick por pulsación de espacio
 renderPause :: IO ()
 renderPause = do
-  let initial = GameState { mundo = mundoEjemplo, tiempo = 0, ronda = 0 }
+  mundoInicial <- mundoAleatorio
+  let initial = GameState { mundo = mundoInicial, tiempo = 0, ronda = 0 }
   playIO window backgroundColor fps initial renderGame handleEventPause stepGamePause
 
 -- Punto de entrada gráfico para ejecutar la simulación con Gloss
 -- Usa GameState y mundoEjemplo de Main.
 render :: IO ()
 render = do
-  let initial = GameState { mundo = mundoEjemplo, tiempo = 0, ronda = 0 }
+  mundoInicial <- mundoAleatorio
+  let initial = GameState { mundo = mundoInicial, tiempo = 0, ronda = 0 }
   playIO window backgroundColor fps initial renderGame handleEvent stepGame
