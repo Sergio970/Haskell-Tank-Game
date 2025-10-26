@@ -51,7 +51,7 @@ estrategiaCazacarros mundo carro =
                                  && team e /= team carro)
                            (carros mundo)) of
     Just enemigo -> [apuntarHacia carro enemigo, DispararA (carroId enemigo)]
-    Nothing      -> [Girar 15]  -- patrulla girando cuando no ve enemigos
+    Nothing      -> [Mover (direccionAleatoria carro)]
 
 -- ============================================================
 -- Estrategia del tanque pesado

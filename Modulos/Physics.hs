@@ -10,6 +10,9 @@ rad2deg rad = rad * (180.0 / pi)
 deg2rad :: Float -> Float
 deg2rad deg = deg * (pi / 180.0)
 
+vectorNulo :: Vector -> Bool
+vectorNulo (vx, vy) = abs vx < 0.1 && abs vy < 0.1
+
 -- Operaciones vectoriales
 addVec, subVec :: Vector -> Vector -> Vector
 addVec (x1,y1) (x2,y2) = (x1+x2, y1+y2)

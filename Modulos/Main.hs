@@ -13,7 +13,7 @@ import Unidad
 
 import Bot (botEstrategico, BotAction(..))
 import Collisions (CollisionEvent(..), checkCollisions)
-import Physics (updatePosition)
+import Physics (updatePosition, vectorNulo)
 
   -- ============================================================
   -- =========        Funciones de ejemplo              =========
@@ -266,7 +266,26 @@ bucleTorneo dt mundoActual = do
   let eventos = checkCollisions mundoConProyectilesMovidos
   mundoFinal <- aplicarEventos eventos mundoConProyectilesMovidos
 
+  -- 5️. Evitar que se queden quietos
+  let mundoConMovimiento = reactivarTanques mundoFinal
+
+  -- 6️. Comprobar si ha terminado el juego
+  if torneoTerminado mundoConMovimiento
+    then do
+      return mundoConMovimiento
+    else
+      return mundoConMovimiento
+
   return mundoFinal
+
+-- Reactivamos los tanques que no estén haciendo nada
+reactivarTanques :: Mundo -> Mundo
+reactivarTanques m =
+  let moverSiQuieto c =
+        if energia c > 0 && vectorNulo (velocidad c)
+          then c { direccion = direccion c + 10 }  -- pequeño cambio direccional
+          else c
+  in m { carros = map moverSiQuieto (carros m) }
 
   -- Actualiza la posición de todos los tanques en el mundo
 actualizarTanques :: Float -> Mundo -> Mundo
@@ -334,34 +353,52 @@ aplicarEventos eventos m = foldM procesarEvento m eventos
         _ -> return mundo
 
     procesarEvento mundo (RobotRobot id1 id2) = do
-      case (buscarCarro id1 (carros mundo), buscarCarro id2 (carros mundo)) of
+      let maybeC1 = buscarCarro id1 (carros mundo)
+          maybeC2 = buscarCarro id2 (carros mundo)
+      case (maybeC1, maybeC2) of
         (Just c1, Just c2) -> do
           let (x1, y1) = posicionCarro c1
               (x2, y2) = posicionCarro c2
-              -- Vector entre los centros de los dos carros
-              dx = x2 - x1
-              dy = y2 - y1
-              dist = sqrt (dx*dx + dy*dy)
-              -- Evitar división por cero
-              (nx, ny) = if dist == 0 then (0, 0) else (dx / dist, dy / dist)
-              -- Magnitud del desplazamiento mínimo para separarlos (pequeño rebote)
-              sep = 2.0
-              c1' = c1 { posicion = (x1 - nx * sep, y1 - ny * sep)
-                       , velocidad = (-nx * 5, -ny * 5) }
-              c2' = c2 { posicion = (x2 + nx * sep, y2 + ny * sep)
-                       , velocidad = (-nx * 5, -ny * 5) }
-          let mundoTemp = reemplazarCarro c1' (carros mundo) mundo
-          let mundo1   = mundoTemp { carros = c2' : filter ((/= carroId c2') . carroId) (carros mundoTemp) }
-          return mundo1
+              dx = x1 - x2
+              dy = y1 - y2
+              dist = max 1 (sqrt (dx*dx + dy*dy))
+              -- vector unitario de separación
+              ux = dx / dist
+              uy = dy / dist
+              -- nueva posición desplazada en direcciones opuestas
+              c1' = c1 { posicion = (x1 + ux * 10, y1 + uy * 10)
+                       , direccion = atan2 uy ux * 180 / pi }
+              c2' = c2 { posicion = (x2 - ux * 10, y2 - uy * 10)
+                       , direccion = atan2 (-uy) (-ux) * 180 / pi }
+              carrosNuevos = reemplazarCarro c1' (carros mundo) $
+                             reemplazarCarro c2' (carros mundo) mundo
+          return carrosNuevos
         _ -> return mundo
 
     procesarEvento mundo (FronteraCarro carroId) =
-      -- el tanque rebota o se detiene
       case buscarCarro carroId (carros mundo) of
         Just c ->
           let (x, y) = posicionCarro c
-              c' = c { posicion = (signum x * (fst (tamanoMundo mundo) / 2 - 5),
-                                  signum y * (snd (tamanoMundo mundo) / 2 - 5)) }
+              (vx, vy) = velocidad c
+              (limX, limY) = tamanoMundo mundo
+              halfX = limX / 2 - 5
+              halfY = limY / 2 - 5
+
+              -- Clampea posición dentro de los límites
+              x' = max (-halfX) (min halfX x)
+              y' = max (-halfY) (min halfY y)
+
+              -- Rebote simple: si toca un borde, invierte componente de velocidad
+              vx' = if abs x >= halfX then -vx else vx
+              vy' = if abs y >= halfY then -vy else vy
+
+              -- Actualiza dirección para que mire hacia el nuevo vector
+              nuevaDir = atan2 vy' vx'
+
+              c' = c { posicion = (x', y')
+                    , velocidad = (vx', vy')
+                    , direccion = nuevaDir
+                    }
           in return $ reemplazarCarro c' (carros mundo) mundo
         Nothing -> return mundo
 
