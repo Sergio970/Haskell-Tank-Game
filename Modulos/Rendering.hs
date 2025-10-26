@@ -6,6 +6,9 @@ import Graphics.Gloss.Interface.IO.Game
 import Unidad
 import Types (TipoCarro(..))
 import Objeto (Objeto(..))
+import Graphics.Gloss.Juicy (loadJuicyPNG)
+import System.IO.Unsafe (unsafePerformIO)
+import Data.Maybe (fromMaybe)
 
 -- Ventana y parámetros de render
 window :: Display
@@ -35,7 +38,32 @@ teamColor t =
 toScreen :: Mundo -> (Float, Float) -> (Float, Float)
 toScreen _ (x, y) = (x, y)
 
--- Dibujo de un tanque
+-- Carga de sprites por equipo (reemplaza la definición anterior de t1Image/t2Image con where).
+{-# NOINLINE t1Image #-}
+{-# NOINLINE t2Image #-}
+fallbackSprite :: Picture
+fallbackSprite = Color (greyN 0.5) (rectangleSolid 40 20)
+
+t1Image, t2Image :: Picture
+t1Image = fromMaybe fallbackSprite $ unsafePerformIO (loadJuicyPNG "Assets/T1.png")
+t2Image = fromMaybe fallbackSprite $ unsafePerformIO (loadJuicyPNG "Assets/T2.png")
+
+-- Dimensiones en píxeles de cada sprite (ajusta a tus imágenes reales).
+t1WidthPx, t1HeightPx :: Float
+t1WidthPx  = 101
+t1HeightPx = 56
+
+t2WidthPx, t2HeightPx :: Float
+t2WidthPx  = 101
+t2HeightPx = 56
+
+getTeamSprite :: Int -> (Picture, Float, Float)
+getTeamSprite t =
+  case t of
+    1 -> (t1Image, t1WidthPx, t1HeightPx)
+    _ -> (t2Image, t2WidthPx, t2HeightPx)
+
+-- Dibujo de un tanque (usa sprite por equipo)
 drawTank :: Mundo -> CarroCombate -> Picture
 drawTank m c =
   let (sx, sy) = toScreen m (posicionCarro c)
@@ -43,9 +71,15 @@ drawTank m c =
       ang      = direccion c                 -- grados
       angCanon = getdireccionCanon c         -- grados del cañón
       (w, h)   = tamano c                    -- unidades de mundo
-      tankPic  = Rotate ang $ rectangleSolid (w * sizeScale) (h * sizeScale)
-      canonPic  = Rotate angCanon $ rectangleSolid (w * sizeScale * 1.2) (h * sizeScale / 4)
-  in Color col $ Translate sx sy (Pictures [tankPic, canonPic])
+      (img, imgW, imgH) = getTeamSprite (team c)
+
+      -- Escala para ajustar el PNG al tamaño del tanque en el mundo
+      sX = (w * sizeScale) / imgW
+      sY = (h * sizeScale) / imgH
+
+      bodyPic  = Translate sx sy $ Rotate ang $ Scale sX sY img
+      canonPic = Color col $ Translate sx sy $ Rotate angCanon $ rectangleSolid (w * sizeScale * 1.2) (h * sizeScale / 4)
+  in Pictures [bodyPic, canonPic]
 
 -- Barra de vida sobre el tanque
 drawHealthBar :: Mundo -> CarroCombate -> Picture
