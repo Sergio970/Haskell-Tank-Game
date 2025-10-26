@@ -41,9 +41,11 @@ drawTank m c =
   let (sx, sy) = toScreen m (posicionCarro c)
       col      = teamColor (team c)
       ang      = direccion c                 -- grados
+      angCanon = getdireccionCanon c         -- grados del cañón
       (w, h)   = tamano c                    -- unidades de mundo
-      tankPic  = rectangleSolid (w * sizeScale) (h * sizeScale)
-  in Color col $ Translate sx sy (Rotate ang tankPic)
+      tankPic  = Rotate ang $ rectangleSolid (w * sizeScale) (h * sizeScale)
+      canonPic  = Rotate angCanon $ rectangleSolid (w * sizeScale * 1.2) (h * sizeScale / 4)
+  in Color col $ Translate sx sy (Pictures [tankPic, canonPic])
 
 -- Barra de vida sobre el tanque
 drawHealthBar :: Mundo -> CarroCombate -> Picture

@@ -30,6 +30,7 @@ carroLigero cid equipo pos =
     Objeto
       { posicion  = pos
       , direccion = 0.0
+      , direccionCanon = 0.0
       , velocidad = (10.0, 0.0)
       , tamano    = (4.0, 3.0)
       , atributos = CarroAtributos
@@ -56,6 +57,7 @@ carroPesado cid equipo pos =
     Objeto
       { posicion  = pos
       , direccion = 0.0
+      , direccionCanon = 0.0
       , velocidad = (4.0, 0.0)
       , tamano    = (7.0, 5.0)
       , atributos = CarroAtributos
@@ -82,6 +84,7 @@ cazacarros cid equipo pos =
     Objeto
       { posicion  = pos
       , direccion = 0.0
+      , direccionCanon = 0.0
       , velocidad = (7.0, 0.0)
       , tamano    = (6.0, 4.0)
       , atributos = CarroAtributos

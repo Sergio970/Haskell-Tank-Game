@@ -56,6 +56,9 @@ posicionCarro  = posicion
 direccionCarro :: CarroCombate -> Angle
 direccionCarro = direccion
 
+getdireccionCanon :: CarroCombate -> Angle
+getdireccionCanon = direccionCanon
+
 velocidadCarro :: CarroCombate -> Vector
 velocidadCarro = velocidad
 
@@ -109,6 +112,9 @@ memoriaCarro Objeto{ atributos = CarroAtributos{ memoriaCarroE = m } } = m
 -- ===================================
 -- Setters
 -- ===================================
+
+setPosicion :: Position -> CarroCombate -> CarroCombate
+setPosicion p obj = obj { posicion = p }
 
 setEnergia :: Int -> CarroCombate -> CarroCombate
 setEnergia e obj@Objeto{ atributos = a } = -- a es el valor del campo atributos extraído del mismo objeto
@@ -341,7 +347,7 @@ dispararA pid atacante objetivo = do
   idx <- elegirMunicionPara atacante objetivo
   let ms         = municiones atacante
       m          = ms !! idx
-      dirGrados   = direccionCarro atacante -- El ángulo del tanque en grados
+      dirGrados   = getdireccionCanon atacante -- El ángulo del tanque en grados
       dirRad      = deg2rad dirGrados       -- Convertimos a radianes para los cálculos
       -- Obtenemos el tamaño y posición del tanque que dispara
       (tankWidth, _) = tamanoCarro atacante
