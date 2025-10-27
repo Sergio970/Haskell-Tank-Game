@@ -225,7 +225,6 @@ drawBackground t =
     | (x, y, b) <- starField
     ]
 
--- Decoración de UFOs removida
 
 -- =====================================================
 -- Sistema de partículas para explosiones
