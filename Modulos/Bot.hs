@@ -12,10 +12,6 @@ import Physics (distanceBetween, normalize, rad2deg, addVec, subVec)
 data BotAction = DispararA Int | Mover (Float, Float) | Girar Float
   deriving (Show, Eq)
 
--- Roles tácticos
-data RolTactico = Scout | Tank | Sniper | Support
-  deriving (Show, Eq)
-
 -- ==========================================================
 -- ESTRATEGIA PRINCIPAL: Selecciona según tipo de carro
 -- ==========================================================
@@ -36,11 +32,6 @@ botEstrategico mundo carro
 estrategiaFlankeo :: Mundo -> CarroCombate -> [BotAction]
 estrategiaFlankeo mundo carro =
   let memoria = memoriaCarro carro
-      -- Obtener rol actual o asignar uno nuevo
-      rolActual = obtenerRol memoria
-      
-      -- Encontrar enemigos visibles
-      enemigosVisibles = filter (\e -> team e /= team carro && energia e > 0) (carros mundo)
       
       -- Aliados para coordinación
       aliados = filter (\c -> team c == team carro && carroId c /= carroId carro) (carros mundo)
@@ -61,7 +52,7 @@ estrategiaFlankeo mundo carro =
 
 -- Ejecutar maniobra de flanqueo
 ejecutarFlankeo :: Mundo -> CarroCombate -> CarroCombate -> Float -> [BotAction]
-ejecutarFlankeo mundo carro enemigo dist =
+ejecutarFlankeo _ carro enemigo dist =
   let (ex, ey) = posicionCarro enemigo
       (cx, cy) = posicionCarro carro
       
@@ -89,7 +80,7 @@ ejecutarFlankeo mundo carro enemigo dist =
 
 -- Retirada táctica cuando está bajo de salud
 ejecutarRetirada :: Mundo -> CarroCombate -> CarroCombate -> [CarroCombate] -> [BotAction]
-ejecutarRetirada mundo carro enemigo aliados =
+ejecutarRetirada _ carro enemigo aliados =
   let (ex, ey) = posicionCarro enemigo
       (cx, cy) = posicionCarro carro
       
@@ -111,10 +102,8 @@ ejecutarRetirada mundo carro enemigo aliados =
 
 -- Buscar enemigo en última posición conocida
 ejecutarBusqueda :: Mundo -> CarroCombate -> CarroCombate -> Map.Map String Value -> [BotAction]
-ejecutarBusqueda mundo carro enemigo memoria =
+ejecutarBusqueda _ carro enemigo _ =
   let posActual = posicionCarro enemigo
-      -- Guardar última posición conocida en memoria
-      memoria' = Map.insert "ultimaPosEnemigo" (VPoint posActual) memoria
       
       -- Moverse hacia última posición conocida
       (ex, ey) = posActual
@@ -150,7 +139,7 @@ estrategiaSniper mundo carro =
          else if dist > distanciaOptima + 30  -- Muy lejos, acercarse
            then
              let (dx, dy) = normalize (ex - cx, ey - cy)
-             in [Mover (dx * 0.5, dy * 0.5)]
+             in [Mover (dx * 0.5, dy * 0.5), apuntar]
          else  -- Distancia perfecta, posicionarse y disparar
            let -- Movimiento lateral para evitar ser blanco fácil
                angulo = atan2 (ey - cy) (ex - cx)
@@ -161,7 +150,7 @@ estrategiaSniper mundo carro =
     Nothing -> [Girar 3]
 
 -- ==========================================================
--- ESTRATEGIA 3: TANQUE PESADO
+-- ESTRATEGIA 3: TANQUE PESADO (CORREGIDO)
 -- ==========================================================
 
 estrategiaTanque :: Mundo -> CarroCombate -> [BotAction]
@@ -183,19 +172,19 @@ estrategiaTanque mundo carro =
              let (dx, dy) = normalize (ex - cx, ey - cy)
              in [Mover (dx * 0.6, dy * 0.6)]
          else
-           -- Comportamiento según distancia
+           -- Comportamiento según distancia - SIEMPRE dispara si puede ver
            if dist < 80  -- Distancia de combate cercano
              then
                -- Verificar si hay aliados cerca para coordinar
                let aliadosCerca = filter (\a -> distanceBetween (posicionCarro carro) (posicionCarro a) < 100) aliados
                in if length aliadosCerca >= 1
                     then [apuntar, DispararA (carroId enemigo)]  -- Con apoyo, mantener posición y disparar
-                    else  -- Sin apoyo, avanzar lentamente
+                    else  -- Sin apoyo, avanzar lentamente pero SIEMPRE disparar
                       let (dx, dy) = normalize (ex - cx, ey - cy)
                       in [Mover (dx * 0.4, dy * 0.4), apuntar, DispararA (carroId enemigo)]
-           else  -- Lejos, avanzar con determinación
+           else  -- Lejos, avanzar pero SIEMPRE disparar si puede ver
              let (dx, dy) = normalize (ex - cx, ey - cy)
-             in [Mover (dx * 0.7, dy * 0.7)]
+             in [Mover (dx * 0.7, dy * 0.7), apuntar, DispararA (carroId enemigo)]
     
     Nothing -> [Girar 2]
 
@@ -226,16 +215,6 @@ normalizarAngulo ang
   | ang > 180  = ang - 360
   | ang < -180 = ang + 360
   | otherwise  = ang
-
--- Obtener rol táctico de la memoria
-obtenerRol :: Map.Map String Value -> RolTactico
-obtenerRol memoria =
-  case Map.lookup "rol" memoria of
-    Just (VString "Scout")   -> Scout
-    Just (VString "Tank")    -> Tank
-    Just (VString "Sniper")  -> Sniper
-    Just (VString "Support") -> Support
-    _                        -> Scout  -- Default
 
 -- Calcular vector de movimiento hacia un objetivo
 direccionHacia :: CarroCombate -> CarroCombate -> (Float, Float)
