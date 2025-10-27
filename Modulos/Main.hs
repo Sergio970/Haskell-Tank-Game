@@ -310,5 +310,12 @@ main :: IO ()
 main = do
   putStrLn "Iniciando Haskell Tank Game..."
   m0 <- mundoAleatorio
-  let initial = GameState { mundo = m0, tiempo = 0, ronda = 0, modo = Menu, explosions = [] }
+  let initial = GameState
+                  { mundo = m0
+                  , tiempo = 0
+                  , ronda = 0
+                  , modo = Menu
+                  , explosions = []
+                  , bgIndex = 1          -- fondo por defecto
+                  }
   playIO window backgroundColor fps initial renderGame GameTypes.handleEvent updateGame

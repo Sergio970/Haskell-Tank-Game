@@ -42,6 +42,40 @@ fallbackBullet = Color yellow (circleSolid 3)
 fallbackExplosion :: Picture
 fallbackExplosion = Color orange (circleSolid 15)
 
+-- Fallback de fondo (visible si el PNG no carga)
+fallbackBG :: Picture
+fallbackBG = Color (makeColor 0.1 0.1 0.1 1.0) (rectangleSolid 1000 1000)
+
+-- Intento de carga múltiple (prueba varias rutas)
+loadFirst :: [FilePath] -> IO (Maybe Picture)
+loadFirst [] = pure Nothing
+loadFirst (p:ps) = do
+  mp <- loadJuicyPNG p
+  case mp of
+    Just pic -> pure (Just pic)
+    Nothing  -> loadFirst ps
+
+-- Fondos (se cargan una vez, probando varios nombres y rutas relativas)
+{-# NOINLINE bg1Img #-}
+{-# NOINLINE bg2Img #-}
+bg1Img, bg2Img :: Picture
+bg1Img = fromMaybe fallbackBG $ unsafePerformIO $ loadFirst
+  ["Assets/Background1.png"]
+bg2Img = fromMaybe fallbackBG $ unsafePerformIO $ loadFirst
+  ["Assets/Background2.png"]
+
+-- Escalado (ajusta si tus PNG no son 1000x1000)
+bgWidthPx, bgHeightPx :: Float
+bgWidthPx  = 1000
+bgHeightPx = 1000
+
+drawSelectedBackground :: Int -> Picture
+drawSelectedBackground i =
+  let pic = if i == 1 then bg1Img else bg2Img
+      sx  = 1000 / bgWidthPx
+      sy  = 1000 / bgHeightPx
+  in Scale sx sy pic
+
 -- Sprites de tanques (azules)
 {-# NOINLINE lightTankBlueImg #-}
 lightTankBlueImg :: Picture
@@ -57,38 +91,30 @@ hunterTankBlueImg = fromMaybe fallbackSprite $ unsafePerformIO (loadJuicyPNG "As
 
 -- Sprites de tanques (rojos)
 {-# NOINLINE lightTankRedImg #-}
-lightTankRedImg :: Picture
 lightTankRedImg = fromMaybe fallbackSprite $ unsafePerformIO (loadJuicyPNG "Assets/light_tank_red.png")
 
 {-# NOINLINE heavyTankRedImg #-}
-heavyTankRedImg :: Picture
 heavyTankRedImg = fromMaybe fallbackSprite $ unsafePerformIO (loadJuicyPNG "Assets/heavy_tank_red.png")
 
 {-# NOINLINE hunterTankRedImg #-}
-hunterTankRedImg :: Picture
 hunterTankRedImg = fromMaybe fallbackSprite $ unsafePerformIO (loadJuicyPNG "Assets/hunter_tank_red.png")
 
 -- Sprites de cañones
 {-# NOINLINE cannonBlueImg #-}
-cannonBlueImg :: Picture
 cannonBlueImg = fromMaybe fallbackCannon $ unsafePerformIO (loadJuicyPNG "Assets/cannon_blue.png")
 
 {-# NOINLINE cannonRedImg #-}
-cannonRedImg :: Picture
 cannonRedImg = fromMaybe fallbackCannon $ unsafePerformIO (loadJuicyPNG "Assets/cannon_red.png")
 
 -- Sprite de bala
 {-# NOINLINE bulletImg #-}
-bulletImg :: Picture
 bulletImg = fromMaybe fallbackBullet $ unsafePerformIO (loadJuicyPNG "Assets/bullet.png")
 
 -- Sprites de explosiones
 {-# NOINLINE explosionImpactImg #-}
-explosionImpactImg :: Picture
 explosionImpactImg = fromMaybe fallbackExplosion $ unsafePerformIO (loadJuicyPNG "Assets/explosion_impact.png")
 
 {-# NOINLINE explosionDeathImg #-}
-explosionDeathImg :: Picture
 explosionDeathImg = fromMaybe fallbackExplosion $ unsafePerformIO (loadJuicyPNG "Assets/explosion_death.png")
 
 -- Sprite decorativo removido (no se usa UFO)
@@ -250,45 +276,35 @@ drawExplosion m e =
 renderGame :: GameState -> IO Picture
 renderGame gs = do
   case modo gs of
-    Menu -> pure drawMenu
+    Menu -> do
+      -- Solo estrellas como fondo en el menú
+      pure $ Pictures
+        [ drawBackground 0
+        , drawMenuWith (bgIndex gs)
+        ]
     Jugando -> do
       let m = mundo gs
-          t = tiempo gs
-          
-          fondo = drawBackground t
-          
+          fondoSel = drawSelectedBackground (bgIndex gs)  -- Solo PNG como fondo en juego
           vivos = filter (\c -> energia c > 0) (carros m)
           tanks = map (drawTank m) vivos
           bars  = map (drawHealthBar m) vivos
-          
           projs = map (drawProjectile m) (proyectiles m)
-          
           explosionPics = map (drawExplosion m) (explosions gs)
-          
-      pure $ Pictures ([fondo] ++ tanks ++ bars ++ projs ++ explosionPics)
+      pure $ Pictures ( [fondoSel] ++ tanks ++ bars ++ projs ++ explosionPics )
 
 -- Pantalla de menú inicial
-drawMenu :: Picture
-drawMenu =
+drawMenuWith :: Int -> Picture
+drawMenuWith idx =
   Pictures
-    [ -- Fondo negro con estrellas
-      drawBackground 0
-      
-      -- Título "SPACE WAR"
-    , Translate (-225) 100 $ Scale 0.8 0.8 $ Color white $ Text "SPACE WAR"
-      
-      -- Subtítulo
+    [ Translate (-225) 100 $ Scale 0.8 0.8 $ Color white $ Text "SPACE WAR"
     , Translate (-200) 0 $ Scale 0.3 0.3 $ Color (greyN 0.8) $ Text "Tank Combat Simulator"
-      
-      -- Instrucción
-    , Translate (-180) (-100) $ Scale 0.25 0.25 $ Color yellow $ Text "Press ENTER to Start"
-      
-      -- Controles
-    , Translate (-150) (-180) $ Scale 0.15 0.15 $ Color (greyN 0.6) $ Text "Press R to restart during game"
+    , Translate (-180) (-100) $ Scale 0.25 0.25 $ Color yellow $ Text "Presiona ENTER para iniciar"
+    , Translate (-180) (-180) $ Scale 0.15 0.15 $ Color (greyN 0.7) $ Text "Pulsa F para cambiar fondo:"
+    , Translate (240)  (-180) $ Scale 0.15 0.15 $ Color (greyN 0.7) $ Text (if idx == 1 then "Nebulosa" else "Star-Wars")
     ]
 
 -- =====================================================
--- Event handler (sin cambios)
+-- Event handler
 -- =====================================================
 
 handleEvent :: Event -> GameState -> IO GameState
