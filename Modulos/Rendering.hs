@@ -82,16 +82,13 @@ drawHealthBar m c =
       frame    = Color (greyN 0.2) (rectangleWire barW barH)
   in Translate sx (sy + yOff) (Pictures [redPic, greenPic, frame])
 
-
 drawProjectile :: Mundo -> Proyectil -> Picture
 drawProjectile m p =
   let (sx, sy) = toScreen m (posicionProyectil p)
   in Color yellow $ Translate sx sy (circleSolid 3)
 
-
-
 -- =====================================================
--- 🌌 Fondo animado: estrellas que parpadean lentamente
+-- Fondo animado: estrellas que parpadean lentamente
 -- =====================================================
 
 -- Genera un patrón fijo de estrellas con brillo oscilante

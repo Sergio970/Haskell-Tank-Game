@@ -41,7 +41,6 @@ estrategiaGenerica mundo carro =
            else [Mover (dx, dy)]
     Nothing -> [Girar 2]
 
-
 -- ==========================================================
 -- Utilidades del bot
 -- ==========================================================
