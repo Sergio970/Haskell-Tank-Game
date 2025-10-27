@@ -95,7 +95,7 @@ mundoAleatorio = do
   pure Mundo { carros = todos, proyectiles = [], tamanoMundo = (tamX, tamY), memoria = memoriaMundo }
 
 --------------------------------
--- Sistema de combate mejorado
+-- Sistema de combate
 --------------------------------
 
 dispararSimple :: Int -> CarroCombate -> CarroCombate -> Proyectil
@@ -130,10 +130,10 @@ aplicarAccionesBot dt m tiempoActual (carro, acts) = foldM aplicar m acts
             then do
               let pid = length (proyectiles mundo) + 1
                   proj = dispararSimple pid carro obj
-                  memoria' = Map.insert "ultimoDisparo" (VFloat tiempoActual) memoriaCar
-                  carro' = setMemoriaCarro memoria' carro
+                  memoriaActualizada = Map.insert "ultimoDisparo" (VFloat tiempoActual) memoriaCar
+                  carroActualizado = setMemoriaCarro memoriaActualizada carro
               pure $ mundo { proyectiles = proj : proyectiles mundo
-                           , carros = reemplazarCarroEnLista carro' (carros mundo) }
+                           , carros = reemplazarCarroEnLista carroActualizado (carros mundo) }
             else pure mundo
         Nothing  -> pure mundo
         
@@ -185,26 +185,36 @@ limpiarProyectiles dt m =
       ps2 = filter (\p -> dentro (posicionProyectil p) && vivosTTL p) ps1
   in m { proyectiles = ps2 }
 
-aplicarEventosColision :: [CollisionEvent] -> Mundo -> IO Mundo
-aplicarEventosColision eventos m = foldM procesar m eventos
+aplicarEventosColision :: [CollisionEvent] -> Mundo -> GameState -> IO (Mundo, [Explosion])
+aplicarEventosColision eventos m gs = foldM procesar (m, []) eventos
   where
-    procesar mundo (RobotHit cid pid) =
+    procesar (mundo, exps) (RobotHit cid pid) =
       case (buscarCarro cid (carros mundo), buscarProyectil pid (proyectiles mundo)) of
         (Just car, Just proj) ->
-          let municion = municionProyectil proj
-              blindajeCarro = blindaje car
-              danoBase = case tipoMun municion of
-                           AP -> 20
-                           AE -> 15
-              factorBlindaje = max 0.3 (1.0 - blindajeCarro / 300.0)
-              danoFinal = round (fromIntegral danoBase * factorBlindaje)
-              
-              carDanado = setEnergia (max 0 (energia car - danoFinal)) car
-              mundoSinProj = mundo { proyectiles = filter ((/= pid) . proyectilId) (proyectiles mundo) }
-          in pure $ reemplazarCarro carDanado (carros mundoSinProj) mundoSinProj
-        _ -> pure mundo
+          if disparadorTeam proj == team car
+            then pure (mundo, exps)
+            else
+              let municion = municionProyectil proj
+                  blindajeCarro = blindaje car
+                  danoBase = case tipoMun municion of
+                               AP -> 20
+                               AE -> 15
+                  factorBlindaje = max 0.3 (1.0 - blindajeCarro / 300.0)
+                  danoFinal = round (fromIntegral danoBase * factorBlindaje)
+                  
+                  carDanado = setEnergia (max 0 (energia car - danoFinal)) car
+                  mundoSinProj = mundo { proyectiles = filter ((/= pid) . proyectilId) (proyectiles mundo) }
+                  
+                  -- Crear explosión de impacto
+                  explosion = Explosion 
+                    { explosionPos = posicionProyectil proj
+                    , explosionTime = 0.5
+                    , explosionType = ImpactExplosion
+                    }
+              in pure (reemplazarCarro carDanado (carros mundoSinProj) mundoSinProj, explosion : exps)
+        _ -> pure (mundo, exps)
     
-    procesar mundo (RobotRobot cid1 cid2) =
+    procesar (mundo, exps) (RobotRobot cid1 cid2) =
       case (buscarCarro cid1 (carros mundo), buscarCarro cid2 (carros mundo)) of
         (Just c1, Just c2) -> do
           let equipo1 = team c1
@@ -225,10 +235,10 @@ aplicarEventosColision eventos m = foldM procesar m eventos
                                in ( c1Danado { velocidad = (vx1 + dx * pushForce, vy1 + dy * pushForce) }
                                   , c2Danado { velocidad = (vx2 - dx * pushForce, vy2 - dy * pushForce) } )
           
-          pure $ reemplazarCarro c2' (carros mundo) (reemplazarCarro c1' (carros mundo) mundo)
-        _ -> pure mundo
+          pure (reemplazarCarro c2' (carros mundo) (reemplazarCarro c1' (carros mundo) mundo), exps)
+        _ -> pure (mundo, exps)
     
-    procesar mundo (FronteraCarro cid) =
+    procesar (mundo, exps) (FronteraCarro cid) =
       case buscarCarro cid (carros mundo) of
         Just c -> do
           let (x, y) = posicionCarro c
@@ -240,11 +250,11 @@ aplicarEventosColision eventos m = foldM procesar m eventos
               vx' = if x <= (-tamX/2 + margin) || x >= (tamX/2 - margin) then -vx * 0.7 else vx
               vy' = if y <= (-tamY/2 + margin) || y >= (tamY/2 - margin) then -vy * 0.7 else vy
               c' = c { posicion = (x', y'), velocidad = (vx', vy') }
-          pure $ reemplazarCarro c' (carros mundo) mundo
-        Nothing -> pure mundo
+          pure (reemplazarCarro c' (carros mundo) mundo, exps)
+        Nothing -> pure (mundo, exps)
     
-    procesar mundo (FronteraProyectil pid) =
-      pure $ mundo { proyectiles = filter ((/= pid) . proyectilId) (proyectiles mundo) }
+    procesar (mundo, exps) (FronteraProyectil pid) =
+      pure (mundo { proyectiles = filter ((/= pid) . proyectilId) (proyectiles mundo) }, exps)
 
 updateGame :: Float -> GameState -> IO GameState
 updateGame dt gs =
@@ -253,15 +263,14 @@ updateGame dt gs =
     Jugando -> do
       let m0 = mundo gs
           tiempoActual = tiempo gs
-          memoriaM = Map.insert "tiempo" (VFloat tiempoActual) (memoria m0)
-          m0' = m0 { memoria = memoriaM }
-          vivos = filter (\c -> energia c > 0) (carros m0')
+          vivos = filter (\c -> energia c > 0) (carros m0)
+          muertosAntes = filter (\c -> energia c <= 0) (carros m0)
 
       m1 <- foldM (\mw c ->
                      case botEstrategico mw c of
                        Just as -> aplicarAccionesBot dt mw tiempoActual (c, as)
                        Nothing -> pure mw
-                  ) m0' vivos
+                  ) m0 vivos
 
       let cs' = map (\c -> c { posicion = updatePosition dt (posicion c) (velocidad c) }) (carros m1)
           ps' = map (\p -> p { posicionProyectil = updatePosition dt (posicionProyectil p) (velocidadProyectil p) }) (proyectiles m1)
@@ -269,10 +278,29 @@ updateGame dt gs =
           m3  = limpiarProyectiles dt m2
           eventos = checkCollisions m3
       
-      m4 <- aplicarEventosColision eventos m3
-      let m5 = m4 { carros = filter ((> 0) . energia) (carros m4) }
+      (m4, nuevasExplosiones) <- aplicarEventosColision eventos m3 gs
+      
+      let muertosDespues = filter (\c -> energia c <= 0) (carros m4)
+          nuevasMuertes = filter (\c -> all ((/= carroId c) . carroId) muertosAntes) muertosDespues
+          explosionesDeathActual = [ Explosion 
+                                       { explosionPos = posicionCarro c
+                                       , explosionTime = 1.0
+                                       , explosionType = DeathExplosion
+                                       }
+                                   | c <- nuevasMuertes
+                                   ]
+          
+          m5 = m4 { carros = filter ((> 0) . energia) (carros m4) }
+          
+          -- Actualizar explosiones existentes
+          explosionesActualizadas = [ e { explosionTime = explosionTime e - dt }
+                                    | e <- explosions gs
+                                    , explosionTime e - dt > 0
+                                    ]
+          
+          todasExplosiones = explosionesActualizadas ++ nuevasExplosiones ++ explosionesDeathActual
 
-      pure gs { mundo = m5, tiempo = tiempo gs + dt }
+      pure gs { mundo = m5, tiempo = tiempoActual + dt, explosions = todasExplosiones }
 
 --------------------------------
 -- MAIN
@@ -282,5 +310,5 @@ main :: IO ()
 main = do
   putStrLn "Iniciando Haskell Tank Game..."
   m0 <- mundoAleatorio
-  let initial = GameState { mundo = m0, tiempo = 0, ronda = 0, modo = Menu }
+  let initial = GameState { mundo = m0, tiempo = 0, ronda = 0, modo = Menu, explosions = [] }
   playIO window backgroundColor fps initial renderGame GameTypes.handleEvent updateGame
