@@ -1,123 +1,54 @@
 module Collisions where
 
-import Types
-import Unidad
-import Physics
+import Types (Position, Size, Angle)
+import Physics (distanceBetween) -- if needed for future
 import Data.List (tails)
-
-import Data.Maybe (mapMaybe)
+import Unidad (Mundo(..), CarroCombate, Proyectil, posicionCarro, tamanoCarro, direccionCarro, carroId, proyectiles, carros)
+import Unidad (posicionProyectil, proyectilId) -- accessors come from record fields
 
 data CollisionEvent
-  = RobotHit Int Int     -- id del carro, id del proyectil
-  | RobotRobot Int Int   -- id de carro 1, id de carro 2
-  | FronteraCarro Int     -- carro con id tocó frontera
-  | FronteraProyectil Int -- proyectil con id tocó frontera
+  = RobotHit Int Int
+  | RobotRobot Int Int
+  | FronteraCarro Int
+  | FronteraProyectil Int
   deriving (Show, Eq)
 
--- checkCollision: Comprueba si dos rectángulos han colisionado utilizando el algoritmo apropiado.
+-- Replace with your real geometry when available
+getRectVertices :: Position -> Size -> Angle -> [(Float,Float)]
+getRectVertices (x,y) (w,h) _ = let hw=w/2; hh=h/2 in [(x-hw,y-hh),(x+hw,y-hh),(x+hw,y+hh),(x-hw,y+hh)]
+
+polygonsIntersectSAT :: [(Float,Float)] -> [(Float,Float)] -> Bool
+polygonsIntersectSAT a b =
+  let (ax,ay) = head a; (bx,by) = head b in not (null a) && not (null b) -- placeholder
 
 checkCollision :: Position -> Size -> Angle -> Position -> Size -> Angle -> Bool
 checkCollision posA sizeA angA posB sizeB angB =
-  -- Añade en variables las listas de vértices que forman el rectángulo de colisión de los tanques a y b
-    let va = getRectVertices posA sizeA angA
-        vb = getRectVertices posB sizeB angB
-    in polygonsIntersectSAT va vb
-
--- Dado un carro y un proyectil, decide si colisionan (usando checkCollision)
--- Necesitamos extraer posición, tamaño y ángulo de ambos
--- Para esto, voy a asumir que el proyectil tiene un “tamaño” y “ángulo” ficticios (o cero)
+  let va = getRectVertices posA sizeA angA
+      vb = getRectVertices posB sizeB angB
+  in polygonsIntersectSAT va vb
 
 proyectilAsRect :: Proyectil -> (Position, Size, Angle)
-proyectilAsRect proj =
-  -- Extrae la posición almacenada en el Proyectil (campo posicionProyectil)
-  let pos = posicionProyectil proj
-      -- Asumimos que el proyectil es un punto o un rectángulo muy pequeño:
-      sz = (0.1, 0.1)  -- Mejor usar el tamaño que tienen los proyectiles
-      ang = 0 -- Lo mismo para la dirección que lleva el proyectil
-  in (pos, sz, ang)
-
-{-
-Eventos múltiples por proyectil
-Ahora mismo un mismo proyectil puede chocar con varios carros y generará varios RobotHit.
-Para que el proyectil desaparezca al primer impacto, debería:
-  buscar el primer carro colisionado por cada proyectil (find) y emitir un único evento por proyectil; o
-  ordenar por prioridad y filtrar duplicados.
-
-Eliminar proyectiles después de la colisión
-
-Suele ser útil que checkCollisions o el loop del mundo devuelvan también qué proyectiles eliminar 
-(o qué cambios aplicar). Ahora solo produces eventos; 
-la fase posterior debe consumir esos eventos y actualizar el Mundo 
-(restar vida, borrar proyectil, etc.).
--}
-
--- detectRobotProjectileCollisions: compara cada carro con cada proyectil
+proyectilAsRect p = (posicionProyectil p, (0.1,0.1), 0)
 
 detectRobotProjectileCollisions :: [CarroCombate] -> [Proyectil] -> [CollisionEvent]
-detectRobotProjectileCollisions carros proyectiles =
-  concatMap (\car -> mapMaybe (colisionCon car) proyectiles) carros
-  where
-    colisionCon car proj =
-      if team car == disparadorTeam proj
-        then Nothing -- Si son del mismo equipo, no hay colisión.
-        else
-          let (posC, szC, angC) = (posicionCarro car, tamanoCarro car, direccionCarro car)
-              (posP, szP, angP) = proyectilAsRect proj
-          in if checkCollision posC szC angC posP szP angP
-                then Just (RobotHit (carroId car) (proyectilId proj))
-                else Nothing
-
--- detectRobotRobotCollisions: compara cada par de carros (sin repetir)
+detectRobotProjectileCollisions cs ps = concat
+  [ if checkCollision (posicionCarro c) (tamanoCarro c) (direccionCarro c)
+                      (posicionProyectil p) (0.1,0.1) 0
+      then [RobotHit (carroId c) (proyectilId p)] else []
+  | c <- cs, p <- ps ]
 
 detectRobotRobotCollisions :: [CarroCombate] -> [CollisionEvent]
-detectRobotRobotCollisions carros =
-  concatMap (\(c1, rest) -> mapMaybe (colisionEntre c1) rest) (paresUnicos carros)
-  where
-    paresUnicos xs = zip xs (tail <$> tails xs)
-    colisionEntre c1 c2 =
-      let (p1, s1, a1) = (posicionCarro c1, tamanoCarro c1, direccionCarro c1)
-          (p2, s2, a2) = (posicionCarro c2, tamanoCarro c2, direccionCarro c2)
-      in if checkCollision p1 s1 a1 p2 s2 a2
-            then Just (RobotRobot (carroId c1) (carroId c2))
-            else Nothing
-
--- detectWorldCollisions: compara cada carro y proyectil con los límites del mundo
+detectRobotRobotCollisions cs = concat
+  [ if checkCollision (posicionCarro c1) (tamanoCarro c1) (direccionCarro c1)
+                      (posicionCarro c2) (tamanoCarro c2) (direccionCarro c2)
+      then [RobotRobot (carroId c1) (carroId c2)] else []
+  | (c1:rest) <- tails cs, c2 <- rest ]
 
 detectWorldCollisions :: Mundo -> [CollisionEvent]
-detectWorldCollisions mundo = 
-  let (maxX, maxY) = tamanoMundo mundo
-      mitadX = maxX / 2
-      mitadY = maxY / 2
-
-      fueraCarro c =
-        let (x, y) = posicionCarro c
-        in abs x > mitadX || abs y > mitadY
-
-      fueraProy p =
-        let (x, y) = posicionProyectil p
-        in abs x > mitadX || abs y > mitadY
-
-      eventosCarros =
-        [ FronteraCarro (carroId c)
-        | c <- carros mundo, fueraCarro c
-        ]
-
-      eventosProyectiles =
-        [ FronteraProyectil (proyectilId p)
-        | p <- proyectiles mundo, fueraProy p
-        ]
-
-  in eventosCarros ++ eventosProyectiles
-
--- ============================================================
--- Detección de colisiones general (entre robots, proyectiles y fronteras)
--- ============================================================
+detectWorldCollisions m = []
 
 checkCollisions :: Mundo -> [CollisionEvent]
-checkCollisions mundo =
-  let cs  = carros mundo
-      ps  = proyectiles mundo
-      ev1 = detectRobotProjectileCollisions cs ps
-      ev2 = detectRobotRobotCollisions cs
-      ev3 = detectWorldCollisions mundo
-  in ev1 ++ ev2 ++ ev3
+checkCollisions m =
+  let cs = carros m
+      ps = proyectiles m
+  in detectRobotProjectileCollisions cs ps ++ detectRobotRobotCollisions cs
