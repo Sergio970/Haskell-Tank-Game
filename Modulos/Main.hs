@@ -4,7 +4,7 @@ import qualified Data.Map.Strict as Map
 import System.Random (randomRIO)
 import Data.Maybe (mapMaybe)
 import Control.Monad (foldM, replicateM)
-import Data.List (partition)
+import Data.List (partition, nub)
 
 import Objeto (Objeto(..))
 import Types (TipoCarro(..), MunicionTipo(..), Vector, Size, Position, Angle, Distance, Value(..))
@@ -260,6 +260,7 @@ updateGame :: Float -> GameState -> IO GameState
 updateGame dt gs =
   case modo gs of
     Menu -> pure gs
+    Victoria _ -> pure gs
     Jugando -> do
       let m0 = mundo gs
           tiempoActual = tiempo gs
@@ -300,7 +301,14 @@ updateGame dt gs =
           
           todasExplosiones = explosionesActualizadas ++ nuevasExplosiones ++ explosionesDeathActual
 
-      pure gs { mundo = m5, tiempo = tiempoActual + dt, explosions = todasExplosiones }
+          equiposVivos = nub (map team (carros m5))
+
+      if length equiposVivos == 1
+        then
+          let ganador = head equiposVivos
+          in pure gs { mundo = m5, explosions = todasExplosiones, modo = Victoria ganador }
+        else
+          pure gs { mundo = m5, tiempo = tiempoActual + dt, explosions = todasExplosiones }
 
 --------------------------------
 -- MAIN

@@ -282,9 +282,19 @@ renderGame gs = do
         [ drawBackground 0
         , drawMenuWith (bgIndex gs)
         ]
+    Victoria eq -> do
+      let m = mundo gs
+          fondoSel = drawSelectedBackground (bgIndex gs)
+          vivos = filter (\c -> energia c > 0) (carros m)
+          tanks = map (drawTank m) vivos
+          bars  = map (drawHealthBar m) vivos
+          projs = map (drawProjectile m) (proyectiles m)
+          explosionPics = map (drawExplosion m) (explosions gs)
+          mensaje = Translate (-260) 0 $ Scale 0.3 0.3 $ Color yellow $ Text ("Ha ganado el equipo " ++ show eq)
+      pure $ Pictures ( [fondoSel] ++ tanks ++ bars ++ projs ++ explosionPics ++ [mensaje] )
     Jugando -> do
       let m = mundo gs
-          fondoSel = drawSelectedBackground (bgIndex gs)  -- Solo PNG como fondo en juego
+          fondoSel = drawSelectedBackground (bgIndex gs)
           vivos = filter (\c -> energia c > 0) (carros m)
           tanks = map (drawTank m) vivos
           bars  = map (drawHealthBar m) vivos

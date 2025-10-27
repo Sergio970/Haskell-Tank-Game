@@ -3,7 +3,7 @@ module GameTypes where
 import Unidad (Mundo)
 import Graphics.Gloss.Interface.IO.Game (Event(..), Key(..), SpecialKey(..), KeyState(..), Modifiers(..))
 
-data Modo = Menu | Jugando deriving (Eq, Show)
+data Modo = Menu | Jugando | Victoria Int deriving (Eq, Show)
 
 data ExplosionType = ImpactExplosion | DeathExplosion
   deriving (Show, Eq)
