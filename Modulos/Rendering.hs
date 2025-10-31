@@ -197,18 +197,24 @@ teamColor t = case t of
 drawTank :: Mundo -> CarroCombate -> Picture
 drawTank m c =
   let (sx, sy) = toScreen m (posicionCarro c)
-      ang      = direccionCarro c
+      (vx, vy) = velocidadCarro c  -- Obtiene velocidad
       angCanon = getdireccionCanon c
       (w, h)   = tamanoCarro c
       tipo     = tipoCarro c
       equipo   = team c
-      
+      -- Calcula ángulo desde la velocidad
+      angCuerpo = if vx == 0 && vy == 0
+                  then direccionCarro c + 180  -- Si está quieto, mantiene orientación
+                  else let angRad = atan2 vy vx
+                       in angRad * (180 / pi) + 180
+
       -- Sprite del cuerpo
       bodySprite = getTankBodySprite tipo equipo
       bodyScaleX = (w * sizeScale) / tankSpriteWidth
       bodyScaleY = (h * sizeScale) / tankSpriteHeight
-      bodyPic = Translate sx sy $ Rotate ang $ Scale bodyScaleX bodyScaleY bodySprite
-      
+      bodyPic = Translate sx sy $ Rotate angCuerpo $ Scale bodyScaleX bodyScaleY bodySprite
+      -- Ahora rota según la dirección de movimiento real
+
       -- Sprite del cañón
       cannonSprite = getCannonSprite equipo
       cannonScaleX = (w * sizeScale * 1.2) / cannonSpriteWidth
@@ -247,9 +253,12 @@ drawHealthBar m c =
 drawProjectile :: Mundo -> Proyectil -> Picture
 drawProjectile m p =
   let (sx, sy) = toScreen m (posicionProyectil p)
-      ang      = direccionProyectil p
-      scale    = bulletSpriteSize / 10
-  in Translate sx sy $ Rotate (ang + 90) $ Scale scale scale bulletImg  -- +90 para que apunte horizontalmente
+      (vx, vy) = velocidadProyectil p
+      -- Calcular el ángulo de movimiento desde la velocidad
+      angRad = atan2 vy vx  -- atan2 calcula el ángulo del vector (vx, vy)
+      angGrados = angRad * (180 / pi)  -- convertir radianes a grados
+      scale = bulletSpriteSize / 10
+  in Translate sx sy $ Rotate angGrados $ Scale scale scale bulletImg
 
 -- =====================================================
 -- Fondo animado con estrellas parpadeantes
