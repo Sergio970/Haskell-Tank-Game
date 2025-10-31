@@ -42,6 +42,18 @@ fallbackBullet = Color yellow (circleSolid 3)
 fallbackExplosion :: Picture
 fallbackExplosion = Color orange (circleSolid 15)
 
+fallbackMeteorito :: Picture
+fallbackMeteorito = Pictures
+  [ Color (makeColor 0.4 0.3 0.2 1.0) (circleSolid 22)
+  , Color (makeColor 0.6 0.4 0.3 1.0) (circleSolid 20)
+  , Color (makeColor 0.5 0.35 0.25 1.0) (circleSolid 15)
+  , Color (makeColor 0.4 0.3 0.2 1.0) (circleSolid 8)
+  , Translate 10 5 $ Color (makeColor 0.4 0.3 0.2 1.0) (circleSolid 5)
+  ]
+
+fallbackEstela :: Picture
+fallbackEstela = Color (makeColor 1.0 0.5 0.2 0.6) (circleSolid 20)
+
 -- Fallback de fondo (visible si el PNG no carga)
 fallbackBG :: Picture
 fallbackBG = Color (makeColor 0.1 0.1 0.1 1.0) (rectangleSolid 1000 1000)
@@ -116,6 +128,15 @@ explosionImpactImg = fromMaybe fallbackExplosion $ unsafePerformIO (loadJuicyPNG
 
 {-# NOINLINE explosionDeathImg #-}
 explosionDeathImg = fromMaybe fallbackExplosion $ unsafePerformIO (loadJuicyPNG "Assets/explosion_death.png")
+
+-- Sprite de meteoritos
+{-# NOINLINE meteoritoImg #-}
+meteoritoImg :: Picture
+meteoritoImg = fromMaybe fallbackMeteorito $ unsafePerformIO $ (loadJuicyPNG "Assets/asteroid.png")
+
+{-# NOINLINE estelaImg #-}
+estelaImg :: Picture
+estelaImg = fromMaybe fallbackEstela $ unsafePerformIO $ (loadJuicyPNG "Assets/stele.png")
 
 -- Sprite decorativo removido (no se usa UFO)
 
@@ -270,6 +291,29 @@ drawExplosion m e =
        Color (makeColor 1 1 1 alpha) sprite
 
 -- =====================================================
+-- Renderizado de obstáculos
+-- =====================================================
+
+drawMeteorito :: Mundo -> Meteorito -> Picture
+drawMeteorito m met =
+  let (sx, sy) = toScreen m (posicionMeteorito met)
+      tam = tamanoMeteorito met
+      rot = rotacionMeteorito met
+      scale = tam / 450
+  in Translate sx sy $ Rotate rot $ Scale scale scale meteoritoImg
+
+drawEstela :: Mundo -> Estela -> Picture
+drawEstela m e =
+  let (sx, sy) = toScreen m (estelaPos e)
+      radio = estelaRadio e
+      vidaNorm = estelaVida e / 0.5
+      alpha = vidaNorm * 0.7
+      scale = radio / 450
+  in Translate sx sy $ 
+     Color (makeColor 1.0 1.0 1.0 alpha) $ 
+     Scale scale scale estelaImg
+
+-- =====================================================
 -- Render principal
 -- =====================================================
 
@@ -296,11 +340,13 @@ renderGame gs = do
       let m = mundo gs
           fondoSel = drawSelectedBackground (bgIndex gs)
           vivos = filter (\c -> energia c > 0) (carros m)
+          mets = map (drawMeteorito m) (obstaculos m)
+          estelasR = concat [map (drawEstela m) (estelas met) | met <- obstaculos m]
           tanks = map (drawTank m) vivos
           bars  = map (drawHealthBar m) vivos
           projs = map (drawProjectile m) (proyectiles m)
           explosionPics = map (drawExplosion m) (explosions gs)
-      pure $ Pictures ( [fondoSel] ++ tanks ++ bars ++ projs ++ explosionPics )
+      pure $ Pictures ( [fondoSel] ++ estelasR ++ mets ++ tanks ++ bars ++ projs ++ explosionPics )
 
 -- Pantalla de menú inicial
 drawMenuWith :: Int -> Picture

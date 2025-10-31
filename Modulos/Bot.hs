@@ -20,10 +20,38 @@ botEstrategico :: Mundo -> CarroCombate -> Maybe [BotAction]
 botEstrategico mundo carro
   | energia carro <= 0 = Nothing
   | otherwise =
-      case tipoCarro carro of
-        Ligero     -> Just (estrategiaFlankeo mundo carro)
-        Cazacarros -> Just (estrategiaSniper mundo carro)
-        Pesado     -> Just (estrategiaTanque mundo carro)
+    let metsVisibles = obtenerMeteoritosVisibles mundo carro
+    in
+      -- Si hay meteoritos visibles, evadirlos PRIMERO
+      if not (null metsVisibles)
+      then
+        case calcularDireccionEscape carro metsVisibles of
+          Just (dirX, dirY) ->
+            -- Mientras se elude, si hay enemigo a la vista, disparar
+            case enemigoMasCercano carro (carros mundo) of
+              Just enemigo ->
+                let puedeVer = veEntre carro enemigo (carros mundo)
+                in
+                  if puedeVer
+                  then
+                    let apuntar = apuntarHacia carro enemigo
+                    in Just [Mover (dirX, dirY), apuntar]
+                  else
+                    Just [Mover (dirX, dirY)]
+              Nothing ->
+                Just [Mover (dirX, dirY)]
+          Nothing ->
+            -- No se pudo calcular, aplicar estrategia normal
+            case tipoCarro carro of
+              Ligero -> Just (estrategiaFlankeo mundo carro)
+              Cazacarros -> Just (estrategiaSniper mundo carro)
+              Pesado -> Just (estrategiaTanque mundo carro)
+      else
+        -- Sin meteoritos, estrategia normal
+        case tipoCarro carro of
+          Ligero -> Just (estrategiaFlankeo mundo carro)
+          Cazacarros -> Just (estrategiaSniper mundo carro)
+          Pesado -> Just (estrategiaTanque mundo carro)
 
 -- ==========================================================
 -- ESTRATEGIA 1: FLANQUEO Y COBERTURA (Ligero)
@@ -223,3 +251,31 @@ direccionHacia carro objetivo =
       (x2, y2) = posicionCarro objetivo
       (dx, dy) = (x2 - x1, y2 - y1)
   in normalize (dx, dy)
+
+-- Detectar meteoritos cercanos
+obtenerMeteoritosVisibles :: Mundo -> CarroCombate -> [Meteorito]
+obtenerMeteoritosVisibles m car =
+  let (cx, cy) = posicionCarro car
+      radioVision = 120.0
+  in filter (\met ->
+    let (mx, my) = posicionMeteorito met
+        dx = mx - cx
+        dy = my - cy
+        dist = sqrt (dx*dx + dy*dy)
+    in dist < radioVision
+    ) (obstaculos m)
+
+-- Calcular dirección de escape (alejarse de meteoritos)
+calcularDireccionEscape :: CarroCombate -> [Meteorito] -> Maybe (Float, Float)
+calcularDireccionEscape car mets
+  | null mets = Nothing
+  | otherwise =
+    let (cx, cy) = posicionCarro car
+        oposiciones = map (\met ->
+          let (mx, my) = posicionMeteorito met
+              (dx, dy) = normalize (cx - mx, cy - my)
+          in (dx, dy)
+          ) mets
+        (totalX, totalY) = foldl (\(sx, sy) (x, y) -> (sx + x, sy + y)) (0, 0) oposiciones
+        numMets = fromIntegral (length mets)
+    in Just $ normalize (totalX / numMets, totalY / numMets)

@@ -3,14 +3,16 @@ module Collisions where
 import Types (Position, Size, Angle)
 import Physics (distanceBetween, getRectVertices, polygonsIntersectSAT)
 import Data.List (tails)
-import Unidad (Mundo(..), CarroCombate, Proyectil, posicionCarro, tamanoCarro, direccionCarro, carroId, proyectiles, carros)
-import Unidad (posicionProyectil, proyectilId)
+import Unidad
 
 data CollisionEvent
     = RobotHit Int Int          -- robot_id proyectil_id
     | RobotRobot Int Int        -- robot1_id robot2_id
     | FronteraCarro Int         -- robot_id
     | FronteraProyectil Int     -- proyectil_id
+    | RobotMeteorito Int Int       -- robot_id meteorito_id
+    | ProyectilMeteorito Int Int   -- ← proyectil_id meteorito_id
+    | RobotEstela Int Int
     deriving (Show, Eq)
 
 -- Verifica colisión entre dos rectángulos usando SAT
@@ -19,6 +21,13 @@ checkCollision posA sizeA angA posB sizeB angB =
     let va = getRectVertices posA sizeA angA
         vb = getRectVertices posB sizeB angB
     in polygonsIntersectSAT va vb
+
+checkCollisionCircle :: Position -> Float -> Position -> Float -> Bool
+checkCollisionCircle (x1, y1) r1 (x2, y2) r2 =
+  let dx = x2 - x1
+      dy = y2 - y1
+      dist = sqrt (dx*dx + dy*dy)
+  in dist < (r1 + r2)
 
 -- Detecta colisiones entre robots y proyectiles
 detectRobotProjectileCollisions :: [CarroCombate] -> [Proyectil] -> [CollisionEvent]
@@ -54,11 +63,38 @@ detectWorldCollisions m =
         proyectilesColisionados = [FronteraProyectil (proyectilId p) | p <- ps, proyectilFuera p]
     in carrosColisionados ++ proyectilesColisionados
 
+detectRobotMeteoritoCollisions :: [CarroCombate] -> [Meteorito] -> [CollisionEvent]
+detectRobotMeteoritoCollisions cs mets = concat
+  [ if checkCollisionCircle (posicionCarro c) 15 (posicionMeteorito m) (tamanoMeteorito m)
+    then [RobotMeteorito (carroId c) (meteoritoId m)]
+    else []
+  | c <- cs, m <- mets ]
+
+detectProyectilMeteoritoCollisions :: [Proyectil] -> [Meteorito] -> [CollisionEvent]
+detectProyectilMeteoritoCollisions ps mets = concat
+  [ if checkCollisionCircle (posicionProyectil p) 2.0 (posicionMeteorito m) (tamanoMeteorito m)
+    then [ProyectilMeteorito (proyectilId p) (meteoritoId m)]
+    else []
+  | p <- ps, m <- mets ]
+
+detectRobotEstelaCollisions :: [CarroCombate] -> [Meteorito] -> [CollisionEvent]
+detectRobotEstelaCollisions cs mets =
+  let todasEstelas = [(e, met) | met <- mets, e <- estelas met]
+  in concat
+    [ if checkCollisionCircle (posicionCarro c) 15 (estelaPos e) (estelaRadio e)
+      then [RobotEstela (carroId c) (estelaId e)]
+      else []
+    | c <- cs, (e, met) <- todasEstelas ]
+
 -- Función principal que detecta todas las colisiones
 checkCollisions :: Mundo -> [CollisionEvent]
 checkCollisions m =
     let cs = carros m
         ps = proyectiles m
+        obs = obstaculos m
     in detectRobotProjectileCollisions cs ps 
        ++ detectRobotRobotCollisions cs 
        ++ detectWorldCollisions m
+       ++ detectRobotMeteoritoCollisions cs obs
+       ++ detectProyectilMeteoritoCollisions ps obs
+       ++ detectRobotEstelaCollisions cs obs

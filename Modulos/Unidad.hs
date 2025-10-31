@@ -6,6 +6,8 @@ module Unidad (
     Mundo(..),
     Tripulacion(..),
     EstadoTripulante(..),
+    Meteorito(..),
+    Estela(..),
 
     -- Wrappers de acceso
     posicionCarro,
@@ -423,6 +425,7 @@ aplicarDanioConMuerteAleatoria dmg carro = do
 data Mundo = Mundo
   { carros      :: [CarroCombate]
   , proyectiles :: [Proyectil]
+  , obstaculos  :: [Meteorito]
   , tamanoMundo :: Size
   , memoria     :: Memory
   } deriving (Show)
@@ -470,6 +473,29 @@ mostrarVisionDe m = mapM_ printVision (carros m)
       putStrLn $
         "Carro (team " ++ show eq ++ ", tipo " ++ show tipo ++
         ") ve " ++ show vistosTipos
+
+-- ===============================
+-- Obstáculos
+-- ===============================
+
+data Meteorito = Meteorito
+  { meteoritoId :: Int
+  , posicionMeteorito :: Position
+  , velocidadMeteorito :: Vector
+  , tamanoMeteorito :: Float
+  , rotacionMeteorito :: Float
+  , velocidadRotacion :: Float
+  , vida :: Int
+  , estelas :: [Estela]
+  } deriving (Show, Eq)
+
+data Estela = Estela
+  { estelaId :: Int
+  , estelaPos :: Position
+  , estelaVida :: Float -- TTL
+  , estelaRadio :: Float
+  , estelaIntensidad :: Float -- daño
+  } deriving (Show, Eq)
 
 -- ===============================
 -- Bucle básico (sin bots ni colisiones)

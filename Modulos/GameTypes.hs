@@ -21,6 +21,8 @@ data GameState = GameState
   , modo       :: Modo
   , explosions :: [Explosion]
   , bgIndex    :: Int          -- 1 o 2, selección de fondo
+  , proximoMeteoritoId  :: Int
+  , tiempoProxMeteorito :: Float
   } deriving (Show)
 
 -- Event handler básico para el menú

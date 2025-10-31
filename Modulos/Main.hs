@@ -92,7 +92,41 @@ mundoAleatorio = do
   carrosEq1 <- mapM (\cid -> carroAleatorioEquipo cid 1 (tamX, tamY)) [1..numPorEquipo]
   carrosEq2 <- mapM (\cid -> carroAleatorioEquipo (cid + 100) 2 (tamX, tamY)) [1..numPorEquipo]
   let todos = carrosEq1 ++ carrosEq2
-  pure Mundo { carros = todos, proyectiles = [], tamanoMundo = (tamX, tamY), memoria = memoriaMundo }
+  pure Mundo { carros = todos, proyectiles = [], obstaculos = [], tamanoMundo = (tamX, tamY), memoria = memoriaMundo }
+
+-- Genera un meteorito aleatorio
+generarMeteorito :: Int -> Size -> IO Meteorito
+generarMeteorito mid (tamX, tamY) = do
+  -- Decidir si aparece en izquierda o derecha
+  lado <- randomRIO (0 :: Int, 1)
+  
+  let (posX, dirX) = if lado == 0
+                     then (-tamX/2 + 20, 150)   -- Izquierda → derecha
+                     else (tamX/2 - 20, -150)   -- Derecha → izquierda
+  
+  posY <- randomRIO (-tamY/2, tamY/2)
+  velY <- randomRIO (-20, 20)
+  
+  tamano <- randomRIO (15, 40)
+  rotInicial <- randomRIO (0, 360)
+  velRot <- randomRIO (-5, 5)
+  
+  let vidaMet = round (tamano * 5)
+  
+  pure Meteorito
+    { meteoritoId = mid
+    , posicionMeteorito = (posX, posY)
+    , velocidadMeteorito = (dirX, velY)
+    , tamanoMeteorito = tamano
+    , rotacionMeteorito = rotInicial
+    , velocidadRotacion = velRot
+    , vida = vidaMet
+    , estelas = []
+    }
+
+-- Genera múltiples meteoritos
+generarMeteoritos :: Int -> Size -> IO [Meteorito]
+generarMeteoritos n tam = mapM (\i -> generarMeteorito i tam) [1..n]
 
 --------------------------------
 -- Sistema de combate
@@ -163,11 +197,18 @@ buscarCarro cid = safeHead . filter ((== cid) . carroId)
 buscarProyectil :: Int -> [Proyectil] -> Maybe Proyectil
 buscarProyectil pid = safeHead . filter ((== pid) . proyectilId)
 
+buscarMeteorito :: Int -> [Meteorito] -> Maybe Meteorito
+buscarMeteorito mid = safeHead . filter ((== mid) . meteoritoId)
+
 reemplazarCarro :: CarroCombate -> [CarroCombate] -> Mundo -> Mundo
 reemplazarCarro c cs m = m { carros = c : filter ((/= carroId c) . carroId) cs }
 
 reemplazarCarroEnLista :: CarroCombate -> [CarroCombate] -> [CarroCombate]
 reemplazarCarroEnLista c cs = c : filter ((/= carroId c) . carroId) cs
+
+reemplazarMeteorito :: Meteorito -> [Meteorito] -> Mundo -> Mundo
+reemplazarMeteorito met mets m = 
+  m { obstaculos = met : filter ((/= meteoritoId met) . meteoritoId) mets }
 
 limpiarProyectiles :: Float -> Mundo -> Mundo
 limpiarProyectiles dt m =
@@ -184,6 +225,79 @@ limpiarProyectiles dt m =
       ps1 = map stepTTL (proyectiles m)
       ps2 = filter (\p -> dentro (posicionProyectil p) && vivosTTL p) ps1
   in m { proyectiles = ps2 }
+
+-- Actualizar meteoritos
+actualizarMeteoritos :: Float -> Mundo -> Mundo
+actualizarMeteoritos dt m =
+  let mets = obstaculos m
+      (tamX, tamY) = tamanoMundo m
+      
+      -- Actualizar posición y estelas
+      mets' = map (actualizarMeteorito dt (tamX, tamY)) mets
+      
+      -- Generar nuevas estelas
+      metsConEstelas = map (\met ->
+        let nuevasEstelas = generarEstelasDesdeMeteorito met
+        in met { estelas = nuevasEstelas ++ estelas met }
+        ) mets'
+      
+      -- Filtrar destruidos
+      metsVivos = filter (\met -> vida met > 0) metsConEstelas
+  in m { obstaculos = metsVivos }
+
+actualizarMeteorito :: Float -> Size -> Meteorito -> Meteorito
+actualizarMeteorito dt (tamX, tamY) met =
+  let (x, y) = posicionMeteorito met
+      (vx, vy) = velocidadMeteorito met
+      
+      x' = x + vx * dt
+      y' = y + vy * dt
+      y'' = max (-tamY/2) (min (tamY/2) y')
+      
+      -- Actualizar estelas del meteorito
+      estelas' = map (\e -> e { estelaVida = estelaVida e - dt }) (estelas met)
+      estelasVivas = filter (\e -> estelaVida e > 0) estelas'
+  in met 
+      { posicionMeteorito = (x', y'')
+      , velocidadMeteorito = (vx, vy)
+      , rotacionMeteorito = rotacionMeteorito met + velocidadRotacion met
+      , estelas = estelasVivas  -- se actualizan junto con el meteorito
+      }
+
+generarEstelasDesdeMeteorito :: Meteorito -> [Estela]
+generarEstelasDesdeMeteorito met =
+  let (x, y) = posicionMeteorito met
+  in [Estela
+       { estelaId = 100000 + meteoritoId met
+       , estelaPos = (x, y)
+       , estelaVida = 0.5
+       , estelaRadio = tamanoMeteorito met * 0.7
+       , estelaIntensidad = 0.3
+       }
+     ]
+
+actualizarMeteoritosEnPartida :: Float -> GameState -> IO GameState
+actualizarMeteoritosEnPartida dt gs = do
+  let tiempoProx = tiempoProxMeteorito gs - dt
+      proximoId = proximoMeteoritoId gs
+      m = mundo gs
+      (tamX, tamY) = tamanoMundo m
+  
+  if tiempoProx <= 0
+    then do
+      -- Generar nuevo meteorito
+      nuevoMet <- generarMeteorito proximoId (tamX, tamY)
+      intervalo <- randomRIO (1.0, 4.0)
+      
+      let mundoActualizado = m { obstaculos = nuevoMet : obstaculos m }
+      
+      pure gs 
+        { mundo = mundoActualizado
+        , proximoMeteoritoId = proximoId + 1
+        , tiempoProxMeteorito = intervalo
+        }
+    else
+      pure gs { tiempoProxMeteorito = tiempoProx }
 
 aplicarEventosColision :: [CollisionEvent] -> Mundo -> GameState -> IO (Mundo, [Explosion])
 aplicarEventosColision eventos m gs = foldM procesar (m, []) eventos
@@ -256,14 +370,59 @@ aplicarEventosColision eventos m gs = foldM procesar (m, []) eventos
     procesar (mundo, exps) (FronteraProyectil pid) =
       pure (mundo { proyectiles = filter ((/= pid) . proyectilId) (proyectiles mundo) }, exps)
 
+    procesar (mundo, exps) (RobotMeteorito cid mid) =
+      case (buscarCarro cid (carros mundo), buscarMeteorito mid (obstaculos mundo)) of
+        (Just car, Just met) -> do
+          let dano = round (tamanoMeteorito met / 2)
+              carDanado = setEnergia (max 0 (energia car - dano)) car
+              (x1, y1) = posicionCarro car
+              (x2, y2) = posicionMeteorito met
+              (dx, dy) = normalize (x1 - x2, y1 - y2)
+              pushForce = 20.0
+              (vx, vy) = velocidadCarro car
+              carEmpujado = carDanado { velocidad = (vx + dx * pushForce, vy + dy * pushForce) }
+              explosion = Explosion (posicionCarro car) 0.3 ImpactExplosion
+          pure (reemplazarCarro carEmpujado (carros mundo) mundo, explosion : exps)
+        _ -> pure (mundo, exps)
+
+    procesar (mundo, exps) (ProyectilMeteorito pid mid) =
+      case (buscarProyectil pid (proyectiles mundo), buscarMeteorito mid (obstaculos mundo)) of
+        (Just proj, Just met) -> do
+          let dano = 20
+              metDanado = met { vida = vida met - dano }
+              mundoSinProj = mundo { proyectiles = filter ((/= pid) . proyectilId) (proyectiles mundo) }
+              mundoActualizado = if vida metDanado <= 0
+                                then mundoSinProj { obstaculos = filter ((/= mid) . meteoritoId) (obstaculos mundoSinProj) }
+                                else reemplazarMeteorito metDanado (obstaculos mundoSinProj) mundoSinProj
+              explosion = Explosion (posicionProyectil proj) 0.4 ImpactExplosion
+              explosionExtra = if vida metDanado <= 0
+                              then [Explosion (posicionMeteorito met) 1.0 DeathExplosion]
+                              else []
+          pure (mundoActualizado, explosion : (explosionExtra ++ exps))
+        _ -> pure (mundo, exps)
+
+    procesar (mundo, exps) (RobotEstela cid eid) =
+      case buscarCarro cid (carros mundo) of
+        Just car -> do
+          let todasEstelas = concat [estelas met | met <- obstaculos mundo]
+              estelaOpt = safeHead (filter ((== eid) . estelaId) todasEstelas)
+          case estelaOpt of
+            Just est -> do
+              let dano = max 1 (round (2.0 * estelaIntensidad est))
+                  carDanado = setEnergia (max 0 (energia car - dano)) car
+              pure (reemplazarCarro carDanado (carros mundo) mundo, exps)
+            Nothing -> pure (mundo, exps)
+        _ -> pure (mundo, exps)
+
 updateGame :: Float -> GameState -> IO GameState
 updateGame dt gs =
   case modo gs of
     Menu -> pure gs
     Victoria _ -> pure gs
     Jugando -> do
-      let m0 = mundo gs
-          tiempoActual = tiempo gs
+      gsConMeteoritos <- actualizarMeteoritosEnPartida dt gs
+      let m0 = mundo gsConMeteoritos
+          tiempoActual = tiempo gsConMeteoritos
           vivos = filter (\c -> energia c > 0) (carros m0)
           muertosAntes = filter (\c -> energia c <= 0) (carros m0)
 
@@ -277,9 +436,10 @@ updateGame dt gs =
           ps' = map (\p -> p { posicionProyectil = updatePosition dt (posicionProyectil p) (velocidadProyectil p) }) (proyectiles m1)
           m2  = m1 { carros = cs', proyectiles = ps' }
           m3  = limpiarProyectiles dt m2
-          eventos = checkCollisions m3
+          m4  = actualizarMeteoritos dt m3
+          eventos = checkCollisions m4
       
-      (m4, nuevasExplosiones) <- aplicarEventosColision eventos m3 gs
+      (m5, nuevasExplosiones) <- aplicarEventosColision eventos m4 gs
       
       let muertosDespues = filter (\c -> energia c <= 0) (carros m4)
           nuevasMuertes = filter (\c -> all ((/= carroId c) . carroId) muertosAntes) muertosDespues
@@ -291,7 +451,7 @@ updateGame dt gs =
                                    | c <- nuevasMuertes
                                    ]
           
-          m5 = m4 { carros = filter ((> 0) . energia) (carros m4) }
+          m6 = m5 { carros = filter ((> 0) . energia) (carros m5) }
           
           -- Actualizar explosiones existentes
           explosionesActualizadas = [ e { explosionTime = explosionTime e - dt }
@@ -306,9 +466,9 @@ updateGame dt gs =
       if length equiposVivos == 1
         then
           let ganador = head equiposVivos
-          in pure gs { mundo = m5, explosions = todasExplosiones, modo = Victoria ganador }
+          in pure gsConMeteoritos { mundo = m6, explosions = todasExplosiones, modo = Victoria ganador }
         else
-          pure gs { mundo = m5, tiempo = tiempoActual + dt, explosions = todasExplosiones }
+          pure gsConMeteoritos { mundo = m6, tiempo = tiempoActual + dt, explosions = todasExplosiones }
 
 --------------------------------
 -- MAIN
@@ -325,5 +485,7 @@ main = do
                   , modo = Menu
                   , explosions = []
                   , bgIndex = 1          -- fondo por defecto
+                  , proximoMeteoritoId = 1000        -- IDs de meteoritos empiezan en 1000
+                  , tiempoProxMeteorito = 2.0         -- Generar el primero en 2 segundos
                   }
   playIO window backgroundColor fps initial renderGame GameTypes.handleEvent updateGame
