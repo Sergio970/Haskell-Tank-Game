@@ -9,6 +9,10 @@ module Unidad (
     Meteorito(..),
     Estela(..),
 
+    -- Bomba
+    Bomba(..),
+    agregarBomba,
+
     -- Wrappers de acceso
     posicionCarro,
     direccionCarro,
@@ -426,6 +430,7 @@ data Mundo = Mundo
   { carros      :: [CarroCombate]
   , proyectiles :: [Proyectil]
   , obstaculos  :: [Meteorito]
+  , bombas      :: [Bomba]       
   , tamanoMundo :: Size
   , memoria     :: Memory
   } deriving (Show)
@@ -435,6 +440,10 @@ agregarCarro c m = m { carros = c : carros m }
 
 agregarProyectil :: Proyectil -> Mundo -> Mundo
 agregarProyectil p m = m { proyectiles = p : proyectiles m }
+
+-- Nuevo: agregar bomba
+agregarBomba :: Bomba -> Mundo -> Mundo
+agregarBomba b m = m { bombas = b : bombas m }
 
 removerCarro :: Int -> Mundo -> Mundo
 removerCarro cid m = m { carros = filter ((/= cid) . carroId) (carros m) }
@@ -495,6 +504,15 @@ data Estela = Estela
   , estelaVida :: Float -- TTL
   , estelaRadio :: Float
   , estelaIntensidad :: Float -- daño
+  } deriving (Show, Eq)
+
+-- Nueva: Bomba
+data Bomba = Bomba
+  { bombaId       :: Int
+  , posicionBomba :: Position
+  , radioBomba    :: Float
+  , activaBomba   :: Bool    -- nueva
+  , tiempoBomba   :: Float   -- nueva
   } deriving (Show, Eq)
 
 -- ===============================

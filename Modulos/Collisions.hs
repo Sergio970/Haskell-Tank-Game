@@ -13,6 +13,8 @@ data CollisionEvent
     | RobotMeteorito Int Int       -- robot_id meteorito_id
     | ProyectilMeteorito Int Int   -- ← proyectil_id meteorito_id
     | RobotEstela Int Int
+    | RobotBomba Int Int           -- ← robot_id bomba_id
+    | MeteoritoBomba Int Int       -- ← meteorito_id bomba_id
     deriving (Show, Eq)
 
 -- Verifica colisión entre dos rectángulos usando SAT
@@ -63,6 +65,7 @@ detectWorldCollisions m =
         proyectilesColisionados = [FronteraProyectil (proyectilId p) | p <- ps, proyectilFuera p]
     in carrosColisionados ++ proyectilesColisionados
 
+-- Detecta colisiones entre robots y meteoritos (círculo simple)
 detectRobotMeteoritoCollisions :: [CarroCombate] -> [Meteorito] -> [CollisionEvent]
 detectRobotMeteoritoCollisions cs mets = concat
   [ if checkCollisionCircle (posicionCarro c) 15 (posicionMeteorito m) (tamanoMeteorito m)
@@ -86,15 +89,33 @@ detectRobotEstelaCollisions cs mets =
       else []
     | c <- cs, (e, met) <- todasEstelas ]
 
+-- Nuevas: detecciones con bombas
+detectRobotBombaCollisions :: [CarroCombate] -> [Bomba] -> [CollisionEvent]
+detectRobotBombaCollisions cs bs = concat
+  [ if checkCollisionCircle (posicionCarro c) 15 (posicionBomba b) (radioBomba b)
+    then [RobotBomba (carroId c) (bombaId b)]
+    else []
+  | c <- cs, b <- bs ]
+
+detectMeteoritoBombaCollisions :: [Meteorito] -> [Bomba] -> [CollisionEvent]
+detectMeteoritoBombaCollisions mets bs = concat
+  [ if checkCollisionCircle (posicionMeteorito m) (tamanoMeteorito m) (posicionBomba b) (radioBomba b)
+    then [MeteoritoBomba (meteoritoId m) (bombaId b)]
+    else []
+  | m <- mets, b <- bs ]
+
 -- Función principal que detecta todas las colisiones
 checkCollisions :: Mundo -> [CollisionEvent]
 checkCollisions m =
-    let cs = carros m
-        ps = proyectiles m
+    let cs  = carros m
+        ps  = proyectiles m
         obs = obstaculos m
-    in detectRobotProjectileCollisions cs ps 
-       ++ detectRobotRobotCollisions cs 
-       ++ detectWorldCollisions m
-       ++ detectRobotMeteoritoCollisions cs obs
-       ++ detectProyectilMeteoritoCollisions ps obs
-       ++ detectRobotEstelaCollisions cs obs
+        bs  = bombas m
+    in  detectRobotProjectileCollisions cs ps 
+     ++ detectRobotRobotCollisions cs 
+     ++ detectWorldCollisions m
+     ++ detectRobotMeteoritoCollisions cs obs
+     ++ detectProyectilMeteoritoCollisions ps obs
+     ++ detectRobotEstelaCollisions cs obs
+     ++ detectRobotBombaCollisions cs bs
+     ++ detectMeteoritoBombaCollisions obs bs

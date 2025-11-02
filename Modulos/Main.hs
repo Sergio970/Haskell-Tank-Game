@@ -92,7 +92,23 @@ mundoAleatorio = do
   carrosEq1 <- mapM (\cid -> carroAleatorioEquipo cid 1 (tamX, tamY)) [1..numPorEquipo]
   carrosEq2 <- mapM (\cid -> carroAleatorioEquipo (cid + 100) 2 (tamX, tamY)) [1..numPorEquipo]
   let todos = carrosEq1 ++ carrosEq2
-  pure Mundo { carros = todos, proyectiles = [], obstaculos = [], tamanoMundo = (tamX, tamY), memoria = memoriaMundo }
+  -- Generar 6 bombas iniciales en posiciones aleatorias con IDs 1..6
+  bombas <- mapM (\i -> generarBomba i (tamX, tamY)) [1..6]
+  pure Mundo { carros = todos
+             , proyectiles = []
+             , obstaculos = []
+             , bombas = bombas
+             , tamanoMundo = (tamX, tamY)
+             , memoria = memoriaMundo
+             }
+
+-- Genera una bomba aleatoria
+generarBomba :: Int -> Size -> IO Bomba
+generarBomba bid (tamX, tamY) = do
+  x <- randomRIO (-tamX/2 + 20, tamX/2 - 20)
+  y <- randomRIO (-tamY/2 + 20, tamY/2 - 20)
+  radio <- randomRIO (6.0, 12.0)
+  pure $ Bomba { bombaId = bid, posicionBomba = (x,y), radioBomba = radio, activaBomba = False, tiempoBomba = 3.0 }
 
 -- Genera un meteorito aleatorio
 generarMeteorito :: Int -> Size -> IO Meteorito
@@ -199,6 +215,13 @@ buscarProyectil pid = safeHead . filter ((== pid) . proyectilId)
 
 buscarMeteorito :: Int -> [Meteorito] -> Maybe Meteorito
 buscarMeteorito mid = safeHead . filter ((== mid) . meteoritoId)
+
+-- Nuevos helpers: bombas
+buscarBomba :: Int -> [Bomba] -> Maybe Bomba
+buscarBomba bid = safeHead . filter ((== bid) . bombaId)
+
+reemplazarBomba :: Bomba -> [Bomba] -> Mundo -> Mundo
+reemplazarBomba b bs m = m { bombas = b : filter ((/= bombaId b) . bombaId) bs }
 
 reemplazarCarro :: CarroCombate -> [CarroCombate] -> Mundo -> Mundo
 reemplazarCarro c cs m = m { carros = c : filter ((/= carroId c) . carroId) cs }
@@ -414,6 +437,39 @@ aplicarEventosColision eventos m gs = foldM procesar (m, []) eventos
             Nothing -> pure (mundo, exps)
         _ -> pure (mundo, exps)
 
+    -- Activar bomba por contacto con tanque
+    procesar (mundo, exps) (RobotBomba _cid bid) =
+      case buscarBomba bid (bombas mundo) of
+        Just b ->
+          if activaBomba b
+            then pure (mundo, exps)
+            else
+              let b' = b { activaBomba = True, tiempoBomba = 3.0 }
+              in pure (reemplazarBomba b' (bombas mundo) mundo, exps)
+        Nothing -> pure (mundo, exps)
+
+    -- Activar bomba por contacto con meteorito
+    procesar (mundo, exps) (MeteoritoBomba _mid bid) =
+      case buscarBomba bid (bombas mundo) of
+        Just b ->
+          if activaBomba b
+            then pure (mundo, exps)
+            else
+              let b' = b { activaBomba = True, tiempoBomba = 3.0 }
+              in pure (reemplazarBomba b' (bombas mundo) mundo, exps)
+        Nothing -> pure (mundo, exps)
+
+-- Actualizar bombas: decrementa temporizador y detona
+actualizarBombasEnMundo :: Float -> Mundo -> (Mundo, [Explosion])
+actualizarBombasEnMundo dt m =
+  let step b = if activaBomba b then b { tiempoBomba = tiempoBomba b - dt } else b
+      bs1 = map step (bombas m)
+      (detonan, vivas) = partition (\b -> activaBomba b && tiempoBomba b <= 0) bs1
+      exps = [ Explosion { explosionPos = posicionBomba b, explosionTime = 0.6, explosionType = ImpactExplosion }
+             | b <- detonan
+             ]
+  in (m { bombas = vivas }, exps)
+
 updateGame :: Float -> GameState -> IO GameState
 updateGame dt gs =
   case modo gs of
@@ -441,7 +497,10 @@ updateGame dt gs =
       
       (m5, nuevasExplosiones) <- aplicarEventosColision eventos m4 gs
       
-      let muertosDespues = filter (\c -> energia c <= 0) (carros m4)
+      -- Nuevas: actualizar bombas tras posibles activaciones
+      let (m5b, explosionesBombas) = actualizarBombasEnMundo dt m5
+
+          muertosDespues = filter (\c -> energia c <= 0) (carros m4)
           nuevasMuertes = filter (\c -> all ((/= carroId c) . carroId) muertosAntes) muertosDespues
           explosionesDeathActual = [ Explosion 
                                        { explosionPos = posicionCarro c
@@ -451,7 +510,7 @@ updateGame dt gs =
                                    | c <- nuevasMuertes
                                    ]
           
-          m6 = m5 { carros = filter ((> 0) . energia) (carros m5) }
+          m6 = m5b { carros = filter ((> 0) . energia) (carros m5b) }
           
           -- Actualizar explosiones existentes
           explosionesActualizadas = [ e { explosionTime = explosionTime e - dt }
@@ -459,9 +518,12 @@ updateGame dt gs =
                                     , explosionTime e - dt > 0
                                     ]
           
-          todasExplosiones = explosionesActualizadas ++ nuevasExplosiones ++ explosionesDeathActual
+          todasExplosiones = explosionesActualizadas
+                             ++ nuevasExplosiones
+                             ++ explosionesBombas
+                             ++ explosionesDeathActual
 
-          equiposVivos = nub (map team (carros m5))
+          equiposVivos = nub (map team (carros m5b))
 
       if length equiposVivos == 1
         then

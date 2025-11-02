@@ -138,7 +138,10 @@ meteoritoImg = fromMaybe fallbackMeteorito $ unsafePerformIO $ (loadJuicyPNG "As
 estelaImg :: Picture
 estelaImg = fromMaybe fallbackEstela $ unsafePerformIO $ (loadJuicyPNG "Assets/stele.png")
 
--- Sprite decorativo removido (no se usa UFO)
+-- Sprite de bomba
+{-# NOINLINE bombImg #-}
+bombImg :: Picture
+bombImg = fromMaybe (Color (greyN 0.6) (rectangleSolid 30 30)) $ unsafePerformIO $ loadJuicyPNG "Assets/bomb.png"
 
 -- =====================================================
 -- Funciones de selección de sprites
@@ -322,6 +325,23 @@ drawEstela m e =
      Color (makeColor 1.0 1.0 1.0 alpha) $ 
      Scale scale scale estelaImg
 
+-- Nuevo: dibujar bomba
+drawBomb :: Mundo -> Bomba -> Picture
+drawBomb m b =
+  let (sx, sy) = toScreen m (posicionBomba b)
+      radio = radioBomba b
+      -- reducir escala para que la bomba sea más pequeña en pantalla
+      scale = (radio * sizeScale) / 400.0
+      -- Número a mostrar: 3 por defecto; si activa, tiempo restante redondeado hacia arriba
+      tShown :: Int
+      tShown = max 0 $ ceiling (if activaBomba b then tiempoBomba b else 3.0)
+      txt = Translate (sx - 6) (sy - 6)
+            $ Scale 0.12 0.12
+            $ Color (if activaBomba b then yellow else white)
+            $ Text (show tShown)
+      sprite = Translate sx sy $ Scale scale scale bombImg
+  in Pictures [sprite, txt]
+
 -- =====================================================
 -- Render principal
 -- =====================================================
@@ -342,9 +362,10 @@ renderGame gs = do
           tanks = map (drawTank m) vivos
           bars  = map (drawHealthBar m) vivos
           projs = map (drawProjectile m) (proyectiles m)
+          bombs = map (drawBomb m) (bombas m)   -- <-- mostrar bombas
           explosionPics = map (drawExplosion m) (explosions gs)
           mensaje = Translate (-260) 0 $ Scale 0.3 0.3 $ Color yellow $ Text ("Ha ganado el equipo " ++ show eq)
-      pure $ Pictures ( [fondoSel] ++ tanks ++ bars ++ projs ++ explosionPics ++ [mensaje] )
+      pure $ Pictures ( [fondoSel] ++ bombs ++ tanks ++ bars ++ projs ++ explosionPics ++ [mensaje] )
     Jugando -> do
       let m = mundo gs
           fondoSel = drawSelectedBackground (bgIndex gs)
@@ -354,8 +375,9 @@ renderGame gs = do
           tanks = map (drawTank m) vivos
           bars  = map (drawHealthBar m) vivos
           projs = map (drawProjectile m) (proyectiles m)
+          bombs = map (drawBomb m) (bombas m)   -- <-- mostrar bombas
           explosionPics = map (drawExplosion m) (explosions gs)
-      pure $ Pictures ( [fondoSel] ++ estelasR ++ mets ++ tanks ++ bars ++ projs ++ explosionPics )
+      pure $ Pictures ( [fondoSel] ++ estelasR ++ mets ++ bombs ++ tanks ++ bars ++ projs ++ explosionPics )
 
 -- Pantalla de menú inicial
 drawMenuWith :: Int -> Picture
