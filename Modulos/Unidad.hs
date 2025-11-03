@@ -13,6 +13,12 @@ module Unidad (
     Bomba(..),
     agregarBomba,
 
+    -- Planeras
+    ObstaculoEstatico(..),
+    agregarObstaculoEstatico,
+    buscarObstaculoEstatico,
+
+
     -- Wrappers de acceso
     posicionCarro,
     direccionCarro,
@@ -110,6 +116,20 @@ data CarroAtributos = CarroAtributos
 
 type CarroCombate = Objeto CarroAtributos
 
+-- ===============================
+-- Planetas
+-- ===============================
+
+-- Agregar obstáculo estático al mundo
+agregarObstaculoEstatico :: ObstaculoEstatico -> Mundo -> Mundo
+agregarObstaculoEstatico o m = m { obstaculosEstaticos = o : obstaculosEstaticos m }
+
+-- Buscar obstáculo estático por ID
+buscarObstaculoEstatico :: Int -> [ObstaculoEstatico] -> Maybe ObstaculoEstatico
+buscarObstaculoEstatico oid = safeHead . filter ((== oid) . obstaculoEstaticoId)
+  where
+    safeHead [] = Nothing
+    safeHead (x:_) = Just x
 -- ===============================
 -- Wrappers Objeto
 -- ===============================
@@ -432,6 +452,7 @@ data Mundo = Mundo
   , obstaculos  :: [Meteorito]
   , bombas      :: [Bomba]       
   , tamanoMundo :: Size
+  , obstaculosEstaticos :: [ObstaculoEstatico]
   , memoria     :: Memory
   } deriving (Show)
 
@@ -506,14 +527,21 @@ data Estela = Estela
   , estelaIntensidad :: Float -- daño
   } deriving (Show, Eq)
 
--- Nueva: Bomba
 data Bomba = Bomba
   { bombaId       :: Int
   , posicionBomba :: Position
   , radioBomba    :: Float
-  , activaBomba   :: Bool    -- nueva
-  , tiempoBomba   :: Float   -- nueva
+  , activaBomba   :: Bool    
+  , tiempoBomba   :: Float   
   } deriving (Show, Eq)
+
+data ObstaculoEstatico = ObstaculoEstatico
+  { obstaculoEstaticoId :: Int
+  , posicionObstaculoEstatico :: Position
+  , tamanoObstaculoEstatico :: Float
+  , tipoVisual :: Int  -- 1-5 para los diferentes sprites de planetas
+  } deriving (Show, Eq)
+
 
 -- ===============================
 -- Bucle básico (sin bots ni colisiones)
