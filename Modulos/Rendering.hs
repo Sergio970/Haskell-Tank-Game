@@ -362,10 +362,41 @@ drawBomb m b =
             $ Text (show tShown)
       sprite = Translate sx sy $ Scale scale scale bombImg
   in Pictures [sprite, txt]
+-- dibujar planetas
+{-# NOINLINE planet1Img #-}
+planet1Img = fromMaybe fallbackSprite $ unsafePerformIO $ loadJuicyPNG "Assets/planet01.png"
+planet2Img = fromMaybe fallbackSprite $ unsafePerformIO $ loadJuicyPNG "Assets/planet02.png"
+planet3Img = fromMaybe fallbackSprite $ unsafePerformIO $ loadJuicyPNG "Assets/planet03.png"
+planet4Img = fromMaybe fallbackSprite $ unsafePerformIO $ loadJuicyPNG "Assets/planet04.png"
+planet5Img = fromMaybe fallbackSprite $ unsafePerformIO $ loadJuicyPNG "Assets/planet05.png"
+
+-- ... planet2Img, planet3Img, etc.
+
+getPlanetSprite :: Int -> Picture
+getPlanetSprite 1 = planet1Img
+getPlanetSprite 2 = planet2Img
+getPlanetSprite 3 = planet3Img
+getPlanetSprite 4 = planet4Img
+getPlanetSprite 5 = planet5Img
+getPlanetSprite _ = planet1Img
+
+drawObstaculoEstatico :: Mundo -> ObstaculoEstatico -> Picture
+drawObstaculoEstatico m obs =
+  let (sx, sy) = toScreen m (posicionObstaculoEstatico obs)
+      radio = tamanoObstaculoEstatico obs
+      sprite = getPlanetSprite (tipoVisual obs)
+      scale = radio / 800 
+  in Translate sx sy $ Scale scale scale sprite
 
 -- =====================================================
 -- Render principal
 -- =====================================================
+textoBold :: String -> Float -> Color -> Picture
+textoBold txt escala col = Pictures
+  [ Translate dx dy $ Scale escala escala $ Color col $ Text txt
+  | dx <- [-0.8, -0.4, 0, 0.4, 0.8]
+  , dy <- [-0.8, -0.4, 0, 0.4, 0.8]
+  ]
 
 renderGame :: GameState -> IO Picture
 renderGame gs = do
@@ -380,26 +411,51 @@ renderGame gs = do
       let m = mundo gs
           fondoSel = drawSelectedBackground (bgIndex gs)
           vivos = filter (\c -> energia c > 0) (carros m)
+          obsEst = map (drawObstaculoEstatico m) (obstaculosEstaticos m)
           tanks = map (drawTank m) vivos
           bars  = map (drawHealthBar m) vivos
           projs = map (drawProjectile m) (proyectiles m)
-          bombs = map (drawBomb m) (bombas m)   -- <-- mostrar bombas
+          bombs = map (drawBomb m) (bombas m)
           explosionPics = map (drawExplosion m) (explosions gs)
-          mensaje = Translate (-260) 0 $ Scale 0.3 0.3 $ Color yellow $ Text ("Ha ganado el equipo " ++ show eq)
-      pure $ Pictures ( [fondoSel] ++ bombs ++ tanks ++ bars ++ projs ++ explosionPics ++ [mensaje] )
+          
+
+          -- Mensajes
+
+          
+          mensaje = Translate (-240) 20 $ 
+                    textoBold ("Ha ganado el equipo " ++ show eq) 0.3 yellow
+          
+          separador = Translate 0 (-20) $ 
+                      Color (greyN 0.5) $ Line [(-300, 0), (300, 0)]
+          
+          instruccion1 = Translate (-200) (-80) $ 
+                         textoBold "Presiona R para reiniciar" 0.22 white
+          
+          instruccion2 = Translate (-200) (-140) $ 
+                         textoBold "Presiona P para volver al menu" 0.22 white
+
+          rondaInfo = Translate (-200) (-200) $ 
+                      Scale 0.15 0.15 $ Color (greyN 0.6) $ 
+                      Text ("Ronda: " ++ show (ronda gs))
+          
+      pure $ Pictures ( [fondoSel] ++ obsEst ++ bombs ++ tanks ++ bars ++ projs 
+                        ++ explosionPics ++ [mensaje, separador, instruccion1, instruccion2, rondaInfo] )
+    
+      
     Jugando -> do
       let m = mundo gs
           fondoSel = drawSelectedBackground (bgIndex gs)
           vivos = filter (\c -> energia c > 0) (carros m)
+          obsEst = map (drawObstaculoEstatico m) (obstaculosEstaticos m)  
           mets = map (drawMeteorito m) (obstaculos m)
           estelasR = concat [map (drawEstela m met) (estelas met) | met <- obstaculos m]
           tanks = map (drawTank m) vivos
           bars  = map (drawHealthBar m) vivos
           projs = map (drawProjectile m) (proyectiles m)
-          bombs = map (drawBomb m) (bombas m)   -- <-- mostrar bombas
+          bombs = map (drawBomb m) (bombas m)
           explosionPics = map (drawExplosion m) (explosions gs)
-      pure $ Pictures ( [fondoSel] ++ estelasR ++ mets ++ bombs ++ tanks ++ bars ++ projs ++ explosionPics )
-
+          statsPanel = drawStatsPanel m (ronda gs)
+      pure $ Pictures ( [fondoSel] ++ obsEst ++ estelasR ++ mets ++ bombs ++ tanks ++ bars ++ projs ++ explosionPics ++ [statsPanel])
 -- Pantalla de menú inicial
 drawMenuWith :: Int -> Picture
 drawMenuWith idx =
@@ -409,7 +465,68 @@ drawMenuWith idx =
     , Translate (-180) (-100) $ Scale 0.25 0.25 $ Color yellow $ Text "Presiona ENTER para iniciar"
     , Translate (-180) (-180) $ Scale 0.15 0.15 $ Color (greyN 0.7) $ Text "Pulsa F para cambiar fondo:"
     , Translate (240)  (-180) $ Scale 0.15 0.15 $ Color (greyN 0.7) $ Text (if idx == 1 then "Nebulosa" else "Star-Wars")
+    , Translate (-180) (-230) $ Scale 0.12 0.12 $ Color (greyN 0.6) $ Text "R: Reiniciar partida en cualquier momento"
+    , Translate (-180) (-260) $ Scale 0.12 0.12 $ Color (greyN 0.6) $ Text "P: Pausar durante el juego"
     ]
+
+drawStatsPanel :: Mundo -> Int -> Picture
+drawStatsPanel m rondaActual =
+  let vivos   = filter (\c -> energia c > 0) (carros m)
+      equipo1 = filter (\c -> team c == 1) vivos
+      equipo2 = filter (\c -> team c == 2) vivos
+
+      contarTipo tipo cs = length $ filter (\c -> tipoCarro c == tipo) cs
+      ligeros1 = contarTipo Ligero equipo1
+      pesados1 = contarTipo Pesado  equipo1
+      caza1    = contarTipo Cazacarros equipo1
+      ligeros2 = contarTipo Ligero equipo2
+      pesados2 = contarTipo Pesado  equipo2
+      caza2    = contarTipo Cazacarros equipo2
+
+      extraTop = 120 :: Float
+      baseH    = 280 :: Float
+      panelH   = baseH + extraTop
+      baseCX   = -390 :: Float
+      baseCY   = 180  :: Float
+      panelCY  = baseCY + extraTop / 2
+
+   
+      shiftLeft = -145 :: Float   -- puedes ajustar: -160, -170, -180 según lo veas
+  in Translate shiftLeft 0 $ Pictures
+    [ -- Fondo principal
+      Translate baseCX panelCY $ Color (makeColor 0 0 0 0.85) $ rectangleSolid 220 panelH
+
+      -- Borde
+    , Translate baseCX panelCY $ Color (makeColor 0.3 0.3 0.4 1.0) $ rectangleWire 220 panelH
+
+      -- === CABECERA ===
+    , Translate (-495) 310 $ Scale 0.12 0.12 $ Color white $ Text "BATALLA"
+    , Translate (-495) 290 $ Scale 0.1  0.1  $ Color yellow $ Text ("Ronda: " ++ show rondaActual)
+    , Translate (-390) 275 $ Color (makeColor 0.6 0.6 0.7 1.0) $ Line [(-105, 0), (105, 0)]
+
+      -- === EQUIPO 1 (ROJO) ===
+    , Translate (-390) 255 $ Color (makeColor 0.8 0.2 0.2 0.6) $ rectangleSolid 210 25
+    , Translate (-495) 250 $ Scale 0.12 0.12 $ Color white $ Text "EQUIPO 1"
+    , Translate (-495) 224 $ Scale 0.20 0.20 $ Color red   $ Text (show (length equipo1))
+    , Translate (-455) 227 $ Scale 0.09 0.09 $ Color white $ Text "NAVES"
+    , Translate (-390) 195 $ Color (makeColor 0.3 0.1 0.1 0.5) $ rectangleSolid 210 30
+    , Translate (-495) 203 $ Scale 0.08  0.08  $ Color (makeColor 1.0 0.95 0.95 1.0) $ Text "Composicion:"
+    , Translate (-495) 188 $ Scale 0.075 0.075 $ Color white $
+        Text ("Ligeros: " ++ show ligeros1 ++ "  Pesados: " ++ show pesados1 ++ "  Cazacarros: " ++ show caza1)
+
+    , Translate (-390) 170 $ Color (makeColor 0.7 0.7 0.7 1.0) $ Line [(-105, 0), (105, 0)]
+
+      -- === EQUIPO 2 (AZUL) ===
+    , Translate (-390) 150 $ Color (makeColor 0.2 0.4 0.8 0.6) $ rectangleSolid 210 25
+    , Translate (-495) 145 $ Scale 0.12 0.12 $ Color white $ Text "EQUIPO 2"
+    , Translate (-495) 119 $ Scale 0.20 0.20 $ Color blue  $ Text (show (length equipo2))
+    , Translate (-455) 122 $ Scale 0.09 0.09 $ Color white $ Text "NAVES"
+    , Translate (-390)  90 $ Color (makeColor 0.1 0.2 0.4 0.5) $ rectangleSolid 210 30
+    , Translate (-495)  98 $ Scale 0.08  0.08  $ Color (makeColor 0.95 0.95 1.0 1.0) $ Text "Composicion:"
+    , Translate (-495)  83 $ Scale 0.075 0.075 $ Color white $
+        Text ("Ligeros: " ++ show ligeros2 ++ "  Pesados: " ++ show pesados2 ++ "  Cazacarros: " ++ show caza2)
+    ]
+
 
 -- =====================================================
 -- Event handler
