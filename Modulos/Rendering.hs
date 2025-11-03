@@ -76,7 +76,7 @@ bg1Img = fromMaybe fallbackBG $ unsafePerformIO $ loadFirst
 bg2Img = fromMaybe fallbackBG $ unsafePerformIO $ loadFirst
   ["Assets/Background2.png"]
 
--- Escalado (ajusta si tus PNG no son 1000x1000)
+-- Escalado
 bgWidthPx, bgHeightPx :: Float
 bgWidthPx  = 1000
 bgHeightPx = 1000
@@ -456,6 +456,7 @@ renderGame gs = do
           explosionPics = map (drawExplosion m) (explosions gs)
           statsPanel = drawStatsPanel m (ronda gs)
       pure $ Pictures ( [fondoSel] ++ obsEst ++ estelasR ++ mets ++ bombs ++ tanks ++ bars ++ projs ++ explosionPics ++ [statsPanel])
+
 -- Pantalla de menú inicial
 drawMenuWith :: Int -> Picture
 drawMenuWith idx =
@@ -491,7 +492,7 @@ drawStatsPanel m rondaActual =
       panelCY  = baseCY + extraTop / 2
 
    
-      shiftLeft = -145 :: Float   -- puedes ajustar: -160, -170, -180 según lo veas
+      shiftLeft = -145 :: Float   
   in Translate shiftLeft 0 $ Pictures
     [ -- Fondo principal
       Translate baseCX panelCY $ Color (makeColor 0 0 0 0.85) $ rectangleSolid 220 panelH
