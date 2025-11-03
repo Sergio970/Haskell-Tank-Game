@@ -6,16 +6,18 @@ import Data.List (tails)
 import Unidad
 
 data CollisionEvent
-    = RobotHit Int Int          -- robot_id proyectil_id
-    | RobotRobot Int Int        -- robot1_id robot2_id
-    | FronteraCarro Int         -- robot_id
-    | FronteraProyectil Int     -- proyectil_id
-    | RobotMeteorito Int Int       -- robot_id meteorito_id
-    | ProyectilMeteorito Int Int   -- ← proyectil_id meteorito_id
+    = RobotHit Int Int
+    | RobotRobot Int Int
+    | FronteraCarro Int
+    | FronteraProyectil Int
+    | RobotMeteorito Int Int
+    | ProyectilMeteorito Int Int
     | RobotEstela Int Int
-    | RobotBomba Int Int           -- ← robot_id bomba_id
-    | MeteoritoBomba Int Int       -- ← meteorito_id bomba_id
+    | RobotBomba Int Int
+    | MeteoritoBomba Int Int
+    | RobotObstaculoEstatico Int Int  -- NUEVO: robot_id obstaculo_id
     deriving (Show, Eq)
+
 
 -- Verifica colisión entre dos rectángulos usando SAT
 checkCollision :: Position -> Size -> Angle -> Position -> Size -> Angle -> Bool
@@ -111,6 +113,7 @@ checkCollisions m =
         ps  = proyectiles m
         obs = obstaculos m
         bs  = bombas m
+        oes = obstaculosEstaticos m  -- NUEVO
     in  detectRobotProjectileCollisions cs ps 
      ++ detectRobotRobotCollisions cs 
      ++ detectWorldCollisions m
@@ -119,3 +122,12 @@ checkCollisions m =
      ++ detectRobotEstelaCollisions cs obs
      ++ detectRobotBombaCollisions cs bs
      ++ detectMeteoritoBombaCollisions obs bs
+     ++ detectRobotObstaculoEstaticoCollisions cs oes
+
+detectRobotObstaculoEstaticoCollisions :: [CarroCombate] -> [ObstaculoEstatico] -> [CollisionEvent]
+detectRobotObstaculoEstaticoCollisions cs obs = concat
+  [ if checkCollisionCircle (posicionCarro c) 15 (posicionObstaculoEstatico o) (tamanoObstaculoEstatico o)
+    then [RobotObstaculoEstatico (carroId c) (obstaculoEstaticoId o)]
+    else []
+  | c <- cs, o <- obs ]
+
