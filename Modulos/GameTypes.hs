@@ -42,5 +42,8 @@ handleEvent (EventKey (Char 'p') Down _ _) gs =
     then pure gs { modo = Menu }
     else pure gs
 
+-- Reiniciar partida con 'R' 
+handleEvent (EventKey (Char 'r') Down _ _) gs = do
+  return gs  
 -- Ignorar todo lo demás
 handleEvent _ gs = pure gs
