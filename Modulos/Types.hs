@@ -1,49 +1,32 @@
-module GameTypes where
+module Types where
 
-import Unidad (Mundo)
-import Graphics.Gloss.Interface.IO.Game (Event(..), Key(..), SpecialKey(..), KeyState(..), Modifiers(..))
+import qualified Data.Map.Strict as Map
 
-data Modo = Menu | Jugando | Victoria Int deriving (Eq, Show)
+type Vector = (Float, Float)
+type Position = (Float, Float)
+type Point = (Float, Float)
+type Angle = Float
+type Distance = Float
+type Size = (Float, Float)
 
-data ExplosionType = ImpactExplosion | DeathExplosion
+-- Enums compartidos
+data TipoCarro    = Ligero | Pesado | Cazacarros
   deriving (Show, Eq)
 
-data Explosion = Explosion
-  { explosionPos  :: (Float, Float)
-  , explosionTime :: Float
-  , explosionType :: ExplosionType
-  } deriving (Show)
+data MunicionTipo = AP | AE
+  deriving (Show, Eq)
 
-data GameState = GameState
-  { mundo      :: Mundo
-  , tiempo     :: Float
-  , ronda      :: Int
-  , modo       :: Modo
-  , explosions :: [Explosion]
-  , bgIndex    :: Int          -- 1 o 2, selección de fondo
-  , proximoMeteoritoId  :: Int
-  , tiempoProxMeteorito :: Float
-  } deriving (Show)
+-- Tipos de valores que puede guardar la memoria
+data Value
+  = VInt Int
+  | VFloat Float
+  | VBool Bool
+  | VString String
+  | VPoint Point
+  | VSize Size
+  | VTipoCarro TipoCarro
+  | VMunicionTipo MunicionTipo
+  deriving (Show, Eq)
 
--- Event handler básico para el menú
-handleEvent :: Event -> GameState -> IO GameState
-handleEvent (EventKey (SpecialKey KeyEnter) Down _ _) gs =
-  if modo gs == Menu then pure gs { modo = Jugando } else pure gs
-
--- Alternar fondo en el menú con tecla 'F'
-handleEvent (EventKey (Char 'f') Down _ _) gs =
-  if modo gs == Menu
-    then pure gs { bgIndex = if bgIndex gs == 1 then 2 else 1 }
-    else pure gs
-
--- Pausar (P) cuando estás jugando: vuelve al menú
-handleEvent (EventKey (Char 'p') Down _ _) gs =
-  if modo gs == Jugando
-    then pure gs { modo = Menu }
-    else pure gs
-
--- Reiniciar partida con 'R' 
-handleEvent (EventKey (Char 'r') Down _ _) gs = do
-  return gs  
--- Ignorar todo lo demás
-handleEvent _ gs = pure gs
+-- Tipo de la memoria: un diccionario de clave -> valor
+type Memory = Map.Map String Value
