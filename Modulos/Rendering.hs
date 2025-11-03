@@ -314,18 +314,39 @@ drawMeteorito m met =
       scale = tam / 450
   in Translate sx sy $ Rotate rot $ Scale scale scale meteoritoImg
 
-drawEstela :: Mundo -> Estela -> Picture
-drawEstela m e =
-  let (sx, sy) = toScreen m (estelaPos e)
+drawEstela :: Mundo -> Meteorito -> Estela -> Picture
+drawEstela m met e =
+  let (mx, my) = posicionMeteorito met  -- Posición del meteorito
+      (vx, vy) = velocidadMeteorito met  -- Velocidad (dirección)
+      
+      -- Normalizar la dirección de movimiento
+      speed = sqrt (vx*vx + vy*vy)
+      (dirX, dirY) = if speed > 0.1
+                     then (-vx / speed, -vy / speed)  -- Dirección OPUESTA
+                     else (0, 0)
+      
+      -- Offset: distancia detrás del meteorito
+      offsetDist = tamanoMeteorito met * 1.5
+      
+      -- Posición de la estela (detrás del meteorito)
+      (ex, ey) = (mx + dirX * offsetDist, my + dirY * offsetDist)
+      
+      -- Convertir a coordenadas de pantalla
+      (sx, sy) = toScreen m (ex, ey)
+
+      flipX = if vx > 0 then (-1) else 1  -- Si vx > 0 (derecha), voltear
+      
       radio = estelaRadio e
       vidaNorm = estelaVida e / 0.5
       alpha = vidaNorm * 0.7
-      scale = radio / 450
+      scaleX = radio / 450        -- Ancho
+      scaleY = radio / 450 * 2.0  -- Alto (largo de la llama)
   in Translate sx sy $ 
+     Scale flipX 1.0 $  -- voltear horizontalmente
      Color (makeColor 1.0 1.0 1.0 alpha) $ 
-     Scale scale scale estelaImg
+     Scale scaleX scaleY estelaImg
 
--- Nuevo: dibujar bomba
+-- dibujar bomba
 drawBomb :: Mundo -> Bomba -> Picture
 drawBomb m b =
   let (sx, sy) = toScreen m (posicionBomba b)
@@ -371,7 +392,7 @@ renderGame gs = do
           fondoSel = drawSelectedBackground (bgIndex gs)
           vivos = filter (\c -> energia c > 0) (carros m)
           mets = map (drawMeteorito m) (obstaculos m)
-          estelasR = concat [map (drawEstela m) (estelas met) | met <- obstaculos m]
+          estelasR = concat [map (drawEstela m met) (estelas met) | met <- obstaculos m]
           tanks = map (drawTank m) vivos
           bars  = map (drawHealthBar m) vivos
           projs = map (drawProjectile m) (proyectiles m)
