@@ -279,3 +279,8 @@ calcularDireccionEscape car mets
         (totalX, totalY) = foldl (\(sx, sy) (x, y) -> (sx + x, sy + y)) (0, 0) oposiciones
         numMets = fromIntegral (length mets)
     in Just $ normalize (totalX / numMets, totalY / numMets)
+
+obtenerObstaculosEstaticosVisibles :: Mundo -> CarroCombate -> [ObstaculoEstatico]
+obtenerObstaculosEstaticosVisibles m car =
+  filter (\obs -> distanceBetween (posicionCarro car) (posicionObstaculoEstatico obs) < 100)
+         (obstaculosEstaticos m)
