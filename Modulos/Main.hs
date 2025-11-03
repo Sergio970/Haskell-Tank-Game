@@ -13,7 +13,7 @@ import Bot (botEstrategico, BotAction(..))
 import Physics (updatePosition, vectorNulo, normalize)
 import Collisions (CollisionEvent(..), checkCollisions)
 import Rendering
-import Graphics.Gloss.Interface.IO.Game (playIO)
+import Graphics.Gloss.Interface.IO.Game (playIO, Event(..), Key(..), SpecialKey(..), KeyState(..))
 import Graphics.Gloss (Display(..), Color(..))
 import GameTypes
 
@@ -92,15 +92,25 @@ mundoAleatorio = do
   carrosEq1 <- mapM (\cid -> carroAleatorioEquipo cid 1 (tamX, tamY)) [1..numPorEquipo]
   carrosEq2 <- mapM (\cid -> carroAleatorioEquipo (cid + 100) 2 (tamX, tamY)) [1..numPorEquipo]
   let todos = carrosEq1 ++ carrosEq2
-  -- Generar 6 bombas iniciales en posiciones aleatorias con IDs 1..6
+  
+  -- Generar 6 bombas iniciales
   bombas <- mapM (\i -> generarBomba i (tamX, tamY)) [1..6]
-  pure Mundo { carros = todos
-             , proyectiles = []
-             , obstaculos = []
-             , bombas = bombas
-             , tamanoMundo = (tamX, tamY)
-             , memoria = memoriaMundo
-             }
+  
+  obstaculosEst <- generarObstaculosEspaciados 8 (tamX, tamY)
+  
+  pure Mundo 
+    { carros = todos
+    , proyectiles = []
+    , obstaculos = []
+    , bombas = bombas
+    , obstaculosEstaticos = obstaculosEst
+    , tamanoMundo = (tamX, tamY)
+    , memoria = memoriaMundo
+    }
+
+
+
+
 
 -- Genera una bomba aleatoria
 generarBomba :: Int -> Size -> IO Bomba
@@ -147,6 +157,61 @@ generarMeteoritos n tam = mapM (\i -> generarMeteorito i tam) [1..n]
 --------------------------------
 -- Sistema de combate
 --------------------------------
+
+generarObstaculoEstatico :: Int -> Size -> IO ObstaculoEstatico
+generarObstaculoEstatico oid (tamX, tamY) = do
+  x <- randomRIO (-tamX/2 + 60, tamX/2 - 60)
+  y <- randomRIO (-tamY/2 + 60, tamY/2 - 60)
+  radio <- randomRIO (20,30)
+  tipo <- randomRIO (1, 5)
+  pure ObstaculoEstatico
+    { obstaculoEstaticoId = oid
+    , posicionObstaculoEstatico = (x, y)
+    , tamanoObstaculoEstatico = radio
+    , tipoVisual = tipo
+    }
+
+
+
+-- Genera obstáculos con separación mínima entre ellos
+generarObstaculosEspaciados :: Int -> Size -> IO [ObstaculoEstatico]
+generarObstaculosEspaciados n tam = generarConDistancia [] n 0
+  where
+    distanciaMinima = 100.0  -- Distancia mínima entre obstáculos (ajustable)
+    maxIntentos = 50         -- Intentos máximos por obstáculo
+    
+    generarConDistancia acc 0 _ = pure acc
+    generarConDistancia acc restantes intentos
+      | intentos > maxIntentos = 
+          -- Si falla muchas veces, aceptar el candidato de todos modos
+          generarConDistancia acc (restantes - 1) 0
+      | otherwise = do
+          candidato <- generarObstaculoEstatico (n - restantes + 1) tam
+          let (cx, cy) = posicionObstaculoEstatico candidato
+              muyCerca obs = 
+                let (ox, oy) = posicionObstaculoEstatico obs
+                    dx = ox - cx
+                    dy = oy - cy
+                    dist = sqrt (dx*dx + dy*dy)
+                    -- Sumar radios para evitar superposición
+                    radioTotal = tamanoObstaculoEstatico candidato + tamanoObstaculoEstatico obs
+                in dist < (distanciaMinima + radioTotal)
+          
+          if null acc || not (any muyCerca acc)
+            then generarConDistancia (candidato:acc) (restantes - 1) 0
+            else generarConDistancia acc restantes (intentos + 1)  -- Reintentar
+
+
+procesar (mundo, exps) (RobotObstaculoEstatico cid oid) =
+  case (buscarCarro cid (carros mundo), buscarObstaculoEstatico oid (obstaculosEstaticos mundo)) of
+    (Just c, Just obs) -> do
+      let (cx, cy) = posicionCarro c
+          (ox, oy) = posicionObstaculoEstatico obs
+          (dx, dy) = normalize (cx - ox, cy - oy)
+          pushForce = 25.0
+          (vx, vy) = velocidadCarro c
+          c' = c { velocidad = (vx + dx * pushForce, vy + dy * pushForce) }
+      pure (reemplazarCarro c' (carros mundo) mundo, exps)
 
 dispararSimple :: Int -> CarroCombate -> CarroCombate -> Proyectil
 dispararSimple pid atacante objetivo =
@@ -350,6 +415,18 @@ aplicarEventosColision eventos m gs = foldM procesar (m, []) eventos
                     }
               in pure (reemplazarCarro carDanado (carros mundoSinProj) mundoSinProj, explosion : exps)
         _ -> pure (mundo, exps)
+
+    procesar (mundo, exps) (RobotObstaculoEstatico cid oid) =
+      case (buscarCarro cid (carros mundo), buscarObstaculoEstatico oid (obstaculosEstaticos mundo)) of
+        (Just car, Just obs) -> do
+          let (cx, cy) = posicionCarro car
+              (ox, oy) = posicionObstaculoEstatico obs
+              (dx, dy) = normalize (cx - ox, cy - oy)
+              pushForce = 30.0  -- Fuerza de empuje al chocar
+              (vx, vy) = velocidadCarro car
+              car' = car { velocidad = (vx + dx * pushForce, vy + dy * pushForce) }
+          pure (reemplazarCarro car' (carros mundo) mundo, exps)
+        _ -> pure (mundo, exps)
     
     procesar (mundo, exps) (RobotRobot cid1 cid2) =
       case (buscarCarro cid1 (carros mundo), buscarCarro cid2 (carros mundo)) of
@@ -532,10 +609,24 @@ updateGame dt gs =
         else
           pure gsConMeteoritos { mundo = m6, tiempo = tiempoActual + dt, explosions = todasExplosiones }
 
+
+-- Reinicia el juego con un nuevo mundo aleatorio
+reiniciarJuego :: GameState -> IO GameState
+reiniciarJuego gs = do
+  m0 <- mundoAleatorio  -- Genera un nuevo mundo
+  pure GameState
+    { mundo = m0
+    , tiempo = 0
+    , ronda = ronda gs + 1  -- Incrementa el contador de rondas
+    , modo = Jugando        -- Vuelve directamente al juego
+    , explosions = []
+    , bgIndex = bgIndex gs  -- Mantiene el fondo seleccionado
+    , proximoMeteoritoId = 1000
+    , tiempoProxMeteorito = 2.0
+    }
 --------------------------------
 -- MAIN
 --------------------------------
-
 main :: IO ()
 main = do
   putStrLn "Iniciando Haskell Tank Game..."
@@ -546,8 +637,18 @@ main = do
                   , ronda = 0
                   , modo = Menu
                   , explosions = []
-                  , bgIndex = 1          -- fondo por defecto
-                  , proximoMeteoritoId = 1000        -- IDs de meteoritos empiezan en 1000
-                  , tiempoProxMeteorito = 2.0         -- Generar el primero en 2 segundos
+                  , bgIndex = 1
+                  , proximoMeteoritoId = 1000
+                  , tiempoProxMeteorito = 2.0
                   }
-  playIO window backgroundColor fps initial renderGame GameTypes.handleEvent updateGame
+  playIO window backgroundColor fps initial renderGame handleEventWithReset updateGame
+
+handleEventWithReset :: Event -> GameState -> IO GameState
+handleEventWithReset (EventKey (Char 'r') Down _ _) gs = 
+  case modo gs of
+    Menu -> pure gs  -- En el menú no hace nada
+    _ -> do
+      putStrLn $ "Reiniciando partida... (Ronda " ++ show (ronda gs + 1) ++ ")"
+      reiniciarJuego gs
+
+handleEventWithReset event gs = GameTypes.handleEvent event gs
