@@ -346,22 +346,39 @@ drawEstela m met e =
      Color (makeColor 1.0 1.0 1.0 alpha) $ 
      Scale scaleX scaleY estelaImg
 
--- dibujar bomba
+
+-- Dibujar Bombas
 drawBomb :: Mundo -> Bomba -> Picture
 drawBomb m b =
   let (sx, sy) = toScreen m (posicionBomba b)
       radio = radioBomba b
-      -- reducir escala para que la bomba sea más pequeña en pantalla
       scale = (radio * sizeScale) / 400.0
-      -- Número a mostrar: 3 por defecto; si activa, tiempo restante redondeado hacia arriba
-      tShown :: Int
-      tShown = max 0 $ ceiling (if activaBomba b then tiempoBomba b else 3.0)
-      txt = Translate (sx - 6) (sy - 6)
-            $ Scale 0.12 0.12
-            $ Color (if activaBomba b then yellow else white)
-            $ Text (show tShown)
+      t = tiempoBomba b
+
+      colorBomba
+        | not (activaBomba b) = makeColor 0.4 0.4 0.4 1.0  -- gris
+        | t > 2.0             = makeColor 1.0 1.0 0.2 1.0  -- amarillo
+        | t > 1.0             = makeColor 1.0 0.6 0.0 1.0  -- naranja
+        | otherwise           = makeColor 1.0 0.1 0.1 1.0  -- rojo
+
+      -- fondo de color dinámico debajo del sprite
+      colorCircle = Translate sx sy $ Color colorBomba $ circleSolid (radio * 1.5)
+
       sprite = Translate sx sy $ Scale scale scale bombImg
-  in Pictures [sprite, txt]
+
+      txt = if activaBomba b
+            then Translate (sx - 6) (sy + 8)
+               $ Scale 0.15 0.15
+               $ Color white
+               $ Text (show (ceiling t))
+            else Blank
+  in Pictures [colorCircle, sprite, txt]
+
+
+
+
+
+
 -- dibujar planetas
 {-# NOINLINE planet1Img #-}
 planet1Img = fromMaybe fallbackSprite $ unsafePerformIO $ loadJuicyPNG "Assets/planet01.png"

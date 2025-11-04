@@ -10,7 +10,7 @@ import Objeto (Objeto(..))
 import Types (TipoCarro(..), MunicionTipo(..), Vector, Size, Position, Angle, Distance, Value(..))
 import Unidad
 import Bot (botEstrategico, BotAction(..))
-import Physics (updatePosition, vectorNulo, normalize)
+import Physics (updatePosition, vectorNulo, normalize, distanceBetween)
 import Collisions (CollisionEvent(..), checkCollisions)
 import Rendering
 import Graphics.Gloss.Interface.IO.Game (playIO, Event(..), Key(..), SpecialKey(..), KeyState(..))
@@ -536,16 +536,46 @@ aplicarEventosColision eventos m gs = foldM procesar (m, []) eventos
               in pure (reemplazarBomba b' (bombas mundo) mundo, exps)
         Nothing -> pure (mundo, exps)
 
--- Actualizar bombas: decrementa temporizador y detona
+-- Actualizar bombas: cuenta atrás + explosión con daño radial
 actualizarBombasEnMundo :: Float -> Mundo -> (Mundo, [Explosion])
 actualizarBombasEnMundo dt m =
-  let step b = if activaBomba b then b { tiempoBomba = tiempoBomba b - dt } else b
-      bs1 = map step (bombas m)
-      (detonan, vivas) = partition (\b -> activaBomba b && tiempoBomba b <= 0) bs1
-      exps = [ Explosion { explosionPos = posicionBomba b, explosionTime = 0.6, explosionType = ImpactExplosion }
-             | b <- detonan
-             ]
-  in (m { bombas = vivas }, exps)
+  let
+    -- Reducir el tiempo de bombas activas
+    step b = if activaBomba b
+             then b { tiempoBomba = tiempoBomba b - dt }
+             else b
+    bs1 = map step (bombas m)
+
+    -- Bombas que explotan
+    (detonan, vivas) = partition (\b -> activaBomba b && tiempoBomba b <= 0) bs1
+
+    -- Daño a los carros por explosión
+    aplicarDanioBomba :: Bomba -> [CarroCombate] -> [CarroCombate]
+    aplicarDanioBomba b cs =
+      let (bx, by) = posicionBomba b
+          radioImpacto = radioBomba b * 10.0
+          maxDano = 80  -- daño máximo en el centro
+      in [ if distanceBetween (posicionCarro c) (bx, by) <= radioImpacto
+           then
+             let dist = distanceBetween (posicionCarro c) (bx, by)
+                 factor = max 0 (1.0 - dist / radioImpacto)
+                 dano = round (fromIntegral maxDano * factor)
+             in setEnergia (max 0 (energia c - dano)) c
+           else c
+         | c <- cs ]
+
+    -- Aplicar daño de todas las bombas que detonan
+    carrosDanados = foldr aplicarDanioBomba (carros m) detonan
+
+    -- Crear explosiones visuales
+    exps = [ Explosion
+              { explosionPos = posicionBomba b
+              , explosionTime = 0.8
+              , explosionType = DeathExplosion
+              }
+           | b <- detonan ]
+
+  in ( m { bombas = vivas, carros = carrosDanados }, exps )
 
 updateGame :: Float -> GameState -> IO GameState
 updateGame dt gs =
