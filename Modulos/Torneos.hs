@@ -838,10 +838,48 @@ actualizarBombasEnMundo dt m =
   in ( m { bombas = vivas, carros = carrosDanados }, exps )
 
 updateGame :: Float -> GameState -> IO GameState
-updateGame dt gs =
+updateGame dt gs = 
   case modo gs of
+
     Menu -> pure gs
-    Victoria _ -> pure gs
+
+    -- ===========================
+    -- MODO: Victoria entre torneos
+    -- ===========================
+    Victoria ganador -> do
+      let tiempoRestante = tiempoEsperaVictoria gs - dt
+      if tiempoRestante <= 0
+        then do
+          -- ¿Quedan torneos?
+          if torneosRestantes gs > 0
+            then do
+              putStrLn $ "→ Iniciando Torneo " ++ show (torneoActual gs + 1) ++ "..."
+              case estadoJuego gs of
+                Just juego -> do
+                    nuevoMundo <- crearNuevoMundo
+                    let nuevoJuego = juego
+                        { mundo = nuevoMundo
+                        , tiempo = 0.0
+                        , ronda = ronda juego + 1
+                        , modo = Jugando
+                        , explosions = []
+                        , proximoMeteoritoId = 100
+                        , tiempoProxMeteorito = 2.0
+                        , torneoActual = torneoActual juego + 1
+                        , torneosRestantes = torneosRestantes juego - 1
+                        , tiempoEsperaVictoria = 0.0
+                        }
+                    pure gs { estadoJuego = Just nuevoJuego }
+
+            else do
+              putStrLn "¡TODOS LOS TORNEOS COMPLETADOS!"
+              pure gs { modo = FinTorneos }
+        else
+          pure gs { tiempoEsperaVictoria = tiempoRestante }
+
+    -- ===========================
+    -- MODO: Jugando
+    -- ===========================
     Jugando -> do
       gsConMeteoritos <- actualizarMeteoritosEnPartida dt gs
       let m0 = mundo gsConMeteoritos
@@ -849,11 +887,13 @@ updateGame dt gs =
           vivos = filter (\c -> energia c > 0) (carros m0)
           muertosAntes = filter (\c -> energia c <= 0) (carros m0)
 
-      m1 <- foldM (\mw c ->
-                     case botEstrategico mw c of
-                       Just as -> aplicarAccionesBot dt mw tiempoActual (c, as)
-                       Nothing -> pure mw
-                  ) m0 vivos
+      m1 <- foldM
+        (\mw c -> case botEstrategico mw c of
+                    Just as -> aplicarAccionesBot dt mw tiempoActual (c, as)
+                    Nothing -> pure mw
+        )
+        m0
+        vivos
 
       let cs' = map (\c -> c { posicion = updatePosition dt (posicion c) (velocidad c) }) (carros m1)
           ps' = map (\p -> p { posicionProyectil = updatePosition dt (posicionProyectil p) (velocidadProyectil p) }) (proyectiles m1)
@@ -864,40 +904,54 @@ updateGame dt gs =
       
       (m5, nuevasExplosiones) <- aplicarEventosColision eventos m4 gs
       
-      -- Nuevas: actualizar bombas tras posibles activaciones
       let (m5b, explosionesBombas) = actualizarBombasEnMundo dt m5
 
           muertosDespues = filter (\c -> energia c <= 0) (carros m4)
           nuevasMuertes = filter (\c -> all ((/= carroId c) . carroId) muertosAntes) muertosDespues
-          explosionesDeathActual = [ Explosion 
-                                       { explosionPos = posicionCarro c
-                                       , explosionTime = 1.0
-                                       , explosionType = DeathExplosion
-                                       }
-                                   | c <- nuevasMuertes
-                                   ]
-          
+          explosionesDeathActual =
+            [ Explosion
+                { explosionPos = posicionCarro c
+                , explosionTime = 1.0
+                , explosionType = DeathExplosion
+                }
+            | c <- nuevasMuertes
+            ]
+
           m6 = m5b { carros = filter ((> 0) . energia) (carros m5b) }
-          
-          -- Actualizar explosiones existentes
-          explosionesActualizadas = [ e { explosionTime = explosionTime e - dt }
-                                    | e <- explosions gs
-                                    , explosionTime e - dt > 0
-                                    ]
-          
+
+          explosionesActualizadas =
+            [ e { explosionTime = explosionTime e - dt }
+            | e <- explosions gs
+            , explosionTime e - dt > 0
+            ]
+
           todasExplosiones = explosionesActualizadas
-                             ++ nuevasExplosiones
-                             ++ explosionesBombas
-                             ++ explosionesDeathActual
+                           ++ nuevasExplosiones
+                           ++ explosionesBombas
+                           ++ explosionesDeathActual
 
           equiposVivos = nub (map team (carros m5b))
 
-      if length equiposVivos == 1
-        then
-          let ganador = head equiposVivos
-          in pure gsConMeteoritos { mundo = m6, explosions = todasExplosiones, modo = Victoria ganador }
+      if length equiposVivos <= 1
+        then do
+          let ganador = if null equiposVivos then 0 else head equiposVivos
+          putStrLn $ "✓ Torneo " ++ show (torneoActual gs)
+                    ++ " completado - Ganador: Equipo "
+                    ++ show ganador
+          pure m5b
+            { modo = Victoria ganador
+            , tiempoEsperaVictoria = 3.0  -- Espera 3 segundos antes del siguiente torneo
+            }
         else
-          pure gsConMeteoritos { mundo = m6, tiempo = tiempoActual + dt, explosions = todasExplosiones }
+          pure m5b
+
+    -- ===========================
+    -- MODO: Fin de todos los torneos
+    -- ===========================
+    FinTorneos -> pure gs
+
+    -- Fallback (otros modos)
+    _ -> pure gs
 
 handleEventWithReset :: Event -> GameState -> IO GameState
 handleEventWithReset (EventKey (Char 'r') Down _ _) gs = 

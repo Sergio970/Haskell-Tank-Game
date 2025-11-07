@@ -424,6 +424,7 @@ renderGame gs = do
         [ drawBackground 0
         , drawMenuWith (bgIndex gs)
         ]
+
     Victoria eq -> do
       let m = mundo gs
           fondoSel = drawSelectedBackground (bgIndex gs)
@@ -434,36 +435,38 @@ renderGame gs = do
           projs = map (drawProjectile m) (proyectiles m)
           bombs = map (drawBomb m) (bombas m)
           explosionPics = map (drawExplosion m) (explosions gs)
-          
+          tiempoEspera = ceiling (tiempoEsperaVictoria gs)
 
           -- Mensajes
-
-          
-          mensaje = Translate (-240) 20 $ 
+          mensaje = Translate (-240) 20 $
                     textoBold ("Ha ganado el equipo " ++ show eq) 0.3 yellow
-          
-          separador = Translate 0 (-20) $ 
-                      Color (greyN 0.5) $ Line [(-300, 0), (300, 0)]
-          
-          instruccion1 = Translate (-200) (-80) $ 
-                         textoBold "Presiona R para reiniciar" 0.22 white
-          
-          instruccion2 = Translate (-200) (-140) $ 
-                         textoBold "Presiona P para volver al menu" 0.22 white
+          mensaje2 = Translate (-250) (-20) $
+                    textoBold ("Próximo torneo en " ++ show tiempoEspera ++ " segundos") 0.25 yellow
 
-          rondaInfo = Translate (-200) (-200) $ 
-                      Scale 0.15 0.15 $ Color (greyN 0.6) $ 
+          separador = Translate 0 (-60) $
+                      Color (greyN 0.5) $ Line [(-300, 0), (300, 0)]
+
+          instruccion1 = Translate (-200) (-100) $
+                         textoBold "Presiona R para reiniciar" 0.22 white
+
+          instruccion2 = Translate (-200) (-160) $
+                         textoBold "Presiona P para volver al menú" 0.22 white
+
+          rondaInfo = Translate (-200) (-220) $
+                      Scale 0.15 0.15 $ Color (greyN 0.6) $
                       Text ("Ronda: " ++ show (ronda gs))
-          
-      pure $ Pictures ( [fondoSel] ++ obsEst ++ bombs ++ tanks ++ bars ++ projs 
-                        ++ explosionPics ++ [mensaje, separador, instruccion1, instruccion2, rondaInfo] )
-    
-      
+
+      pure $ Pictures
+        ( [fondoSel]
+       ++ obsEst ++ bombs ++ tanks ++ bars ++ projs ++ explosionPics
+       ++ [mensaje, mensaje2, separador, instruccion1, instruccion2, rondaInfo]
+        )
+
     Jugando -> do
       let m = mundo gs
           fondoSel = drawSelectedBackground (bgIndex gs)
           vivos = filter (\c -> energia c > 0) (carros m)
-          obsEst = map (drawObstaculoEstatico m) (obstaculosEstaticos m)  
+          obsEst = map (drawObstaculoEstatico m) (obstaculosEstaticos m)
           mets = map (drawMeteorito m) (obstaculos m)
           estelasR = concat [map (drawEstela m met) (estelas met) | met <- obstaculos m]
           tanks = map (drawTank m) vivos
@@ -472,7 +475,22 @@ renderGame gs = do
           bombs = map (drawBomb m) (bombas m)
           explosionPics = map (drawExplosion m) (explosions gs)
           statsPanel = drawStatsPanel m (ronda gs)
-      pure $ Pictures ( [fondoSel] ++ obsEst ++ estelasR ++ mets ++ bombs ++ tanks ++ bars ++ projs ++ explosionPics ++ [statsPanel])
+
+          hudTorneo = Translate (-350) 270 $
+                      Scale 0.15 0.15 $
+                      Color black $
+                      Text ("Torneo " ++ show (actualTorneo gs))
+
+      pure $ Pictures
+        ( [hudTorneo, fondoSel]
+       ++ obsEst ++ estelasR ++ mets ++ bombs ++ tanks ++ bars ++ projs ++ explosionPics ++ [statsPanel]
+        )
+
+    FinTorneos -> do
+      pure $ Pictures
+        [ Translate 0 0 $ Scale 0.3 0.3 $ Color blue $ Text "¡Torneos Completados!"
+        , Translate 0 (-50) $ Scale 0.15 0.15 $ Color black $ Text "Presiona ESC para salir"
+        ]
 
 -- Pantalla de menú inicial
 drawMenuWith :: Int -> Picture

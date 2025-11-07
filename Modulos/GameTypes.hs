@@ -3,7 +3,7 @@ module GameTypes where
 import Unidad (Mundo)
 import Graphics.Gloss.Interface.IO.Game (Event(..), Key(..), SpecialKey(..), KeyState(..), Modifiers(..))
 
-data Modo = Menu | Jugando | Victoria Int deriving (Eq, Show)
+data Modo = Menu | Jugando | Victoria Int | FinTorneos deriving (Eq, Show)
 
 data ExplosionType = ImpactExplosion | DeathExplosion
   deriving (Show, Eq)
@@ -23,6 +23,9 @@ data GameState = GameState
   , bgIndex    :: Int          -- 1 o 2, selección de fondo
   , proximoMeteoritoId  :: Int
   , tiempoProxMeteorito :: Float
+  , actualTorneo :: Int
+  , torneosSobrantes :: Int
+  , tiempoEsperaVictoria :: Float  -- 3 segundos entre torneos
   } deriving (Show)
 
 -- Event handler básico para el menú
