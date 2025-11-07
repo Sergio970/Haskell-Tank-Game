@@ -40,6 +40,7 @@ module Unidad (
 
     -- Setters
     setPosicion,
+    setVelocidadCarro,
     setEnergia,
     setMemoriaCarro,
     setTripulacion,
@@ -192,6 +193,9 @@ memoriaCarro Objeto{ atributos = CarroAtributos{ memoriaCarroE = m } } = m
 
 setPosicion :: Position -> CarroCombate -> CarroCombate
 setPosicion p obj = obj { posicion = p }
+
+setVelocidadCarro :: (Float, Float) -> CarroCombate -> CarroCombate
+setVelocidadCarro v obj = obj { velocidad = v }
 
 setEnergia :: Int -> CarroCombate -> CarroCombate
 setEnergia e obj@Objeto{ atributos = a } = obj { atributos = a { energiaE = e } }
