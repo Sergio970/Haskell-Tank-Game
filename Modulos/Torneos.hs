@@ -870,7 +870,7 @@ updateGame dt gs =
                         , tiempoEsperaVictoria = 0.0
                         }
                     pure gs { estadoJuego = Just nuevoJuego }
-
+                Nothing -> pure gs
             else do
               putStrLn "¡TODOS LOS TORNEOS COMPLETADOS!"
               pure gs { modo = FinTorneos }
