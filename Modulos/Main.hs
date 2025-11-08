@@ -1,5 +1,8 @@
 module Main where
 
+import Graphics.Gloss
+import Graphics.Gloss.Interface.IO.Game
+
 import Objeto (Objeto(..))
 import Types (TipoCarro(..), MunicionTipo(..), Vector, Size, Position, Angle, Distance, Value(..))
 import Unidad
@@ -7,7 +10,8 @@ import Bot (botEstrategico, BotAction(..))
 import Physics (updatePosition, vectorNulo, normalize, distanceBetween)
 import Collisions (CollisionEvent(..), checkCollisions)
 import GameTypes
-import Torneos
+import Torneos (ejecutarTorneos, mundoAleatorio, updateGame)
+import Rendering (renderGame)
 
 --------------------------------
 -- MAIN
@@ -20,7 +24,7 @@ main = do
   numTorneos <- readLn
   
   -- Crear estado inicial del primer torneo
-  mundoInicial <- crearNuevoMundo  -- Tu función de generación
+  mundoInicial <- mundoAleatorio
   
   let estadoInicial = GameState
         { mundo = mundoInicial
@@ -31,8 +35,8 @@ main = do
         , bgIndex = 1
         , proximoMeteoritoId = 100
         , tiempoProxMeteorito = 2.0
-        , torneoActual = 1
-        , torneosRestantes = numTorneos - 1  -- Restamos el primero
+        , actualTorneo = 1
+        , torneosSobrantes = numTorneos - 1  -- Restamos el primero
         , tiempoEsperaVictoria = 0.0
         }
   

@@ -189,6 +189,9 @@ crearNuevoTorneo = do
     , bgIndex = 1
     , proximoMeteoritoId = 100
     , tiempoProxMeteorito = 2.0
+    , actualTorneo = 1 
+    , torneosSobrantes = 0
+    , tiempoEsperaVictoria = 3.0
     }
 
 -- Actualizar juego (MINIMALISTA - solo incrementa tiempo y aplica fricción)
@@ -453,6 +456,9 @@ ejecutarTorneo = do
                   , bgIndex = 1
                   , proximoMeteoritoId = 1000
                   , tiempoProxMeteorito = 2.0
+                  , actualTorneo = 1 
+                  , torneosSobrantes = 0
+                  , tiempoEsperaVictoria = 3.0
                   }
   putStrLn "Iniciando torneo..."
   playIO window backgroundColor fps initial renderGame handleEventWithReset updateGame
@@ -848,34 +854,32 @@ updateGame dt gs =
     -- ===========================
     Victoria ganador -> do
       let tiempoRestante = tiempoEsperaVictoria gs - dt
+      
       if tiempoRestante <= 0
+      then do
+        -- ¿Quedan torneos?
+        if torneosSobrantes gs > 0
         then do
-          -- ¿Quedan torneos?
-          if torneosRestantes gs > 0
-            then do
-              putStrLn $ "→ Iniciando Torneo " ++ show (torneoActual gs + 1) ++ "..."
-              case estadoJuego gs of
-                Just juego -> do
-                    nuevoMundo <- crearNuevoMundo
-                    let nuevoJuego = juego
-                        { mundo = nuevoMundo
-                        , tiempo = 0.0
-                        , ronda = ronda juego + 1
-                        , modo = Jugando
-                        , explosions = []
-                        , proximoMeteoritoId = 100
-                        , tiempoProxMeteorito = 2.0
-                        , torneoActual = torneoActual juego + 1
-                        , torneosRestantes = torneosRestantes juego - 1
-                        , tiempoEsperaVictoria = 0.0
-                        }
-                    pure gs { estadoJuego = Just nuevoJuego }
-                Nothing -> pure gs
-            else do
-              putStrLn "¡TODOS LOS TORNEOS COMPLETADOS!"
-              pure gs { modo = FinTorneos }
-        else
-          pure gs { tiempoEsperaVictoria = tiempoRestante }
+          putStrLn $ "→ Iniciando Torneo " ++ show (actualTorneo gs + 1) ++ "..."
+          nuevoMundo <- mundoAleatorio
+          
+          pure gs
+            { mundo = nuevoMundo
+            , tiempo = 0.0
+            , ronda = ronda gs + 1
+            , modo = Jugando
+            , explosions = []
+            , proximoMeteoritoId = 100
+            , tiempoProxMeteorito = 2.0
+            , actualTorneo = actualTorneo gs + 1
+            , torneosSobrantes = torneosSobrantes gs - 1
+            , tiempoEsperaVictoria = 0.0
+            }
+        else do
+          putStrLn "¡TODOS LOS TORNEOS COMPLETADOS!"
+          pure gs { modo = FinTorneos }
+      else
+        pure gs { tiempoEsperaVictoria = tiempoRestante }
 
     -- ===========================
     -- MODO: Jugando
@@ -935,15 +939,23 @@ updateGame dt gs =
       if length equiposVivos <= 1
         then do
           let ganador = if null equiposVivos then 0 else head equiposVivos
-          putStrLn $ "✓ Torneo " ++ show (torneoActual gs)
+          putStrLn $ "✓ Torneo " ++ show (actualTorneo gs)
                     ++ " completado - Ganador: Equipo "
                     ++ show ganador
-          pure m5b
-            { modo = Victoria ganador
-            , tiempoEsperaVictoria = 3.0  -- Espera 3 segundos antes del siguiente torneo
+
+          pure gs
+            { mundo = m6
+            , tiempo = tiempoActual + dt
+            , explosions = todasExplosiones
+            , modo = Victoria ganador
+            , tiempoEsperaVictoria = 3.0
             }
-        else
-          pure m5b
+      else
+        pure gs
+          { mundo = m6
+          , tiempo = tiempoActual + dt
+          , explosions = todasExplosiones
+          }
 
     -- ===========================
     -- MODO: Fin de todos los torneos
@@ -976,4 +988,7 @@ reiniciarJuego gs = do
     , bgIndex = bgIndex gs  -- Mantiene el fondo seleccionado
     , proximoMeteoritoId = 1000
     , tiempoProxMeteorito = 2.0
+    , actualTorneo = 1 
+    , torneosSobrantes = 0
+    , tiempoEsperaVictoria = 3.0
     }
