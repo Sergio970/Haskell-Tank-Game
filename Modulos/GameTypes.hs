@@ -2,6 +2,7 @@ module GameTypes where
 
 import Unidad (Mundo)
 import Graphics.Gloss.Interface.IO.Game (Event(..), Key(..), SpecialKey(..), KeyState(..), Modifiers(..))
+import System.Exit (exitSuccess)
 
 data Modo = Menu | Jugando | Victoria Int | FinTorneos deriving (Eq, Show)
 
@@ -48,5 +49,11 @@ handleEvent (EventKey (Char 'p') Down _ _) gs =
 -- Reiniciar partida con 'R' 
 handleEvent (EventKey (Char 'r') Down _ _) gs = do
   return gs  
+
+-- Salir del juego con 'Esc'
+handleEvent (EventKey (SpecialKey KeyEsc) Down _ _) gs = do
+  putStrLn "Saliendo del juego..."
+  exitSuccess  -- Termina el programa
+
 -- Ignorar todo lo demás
 handleEvent _ gs = pure gs

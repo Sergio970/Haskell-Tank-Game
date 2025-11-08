@@ -10,7 +10,7 @@ import Bot (botEstrategico, BotAction(..))
 import Physics (updatePosition, vectorNulo, normalize, distanceBetween)
 import Collisions (CollisionEvent(..), checkCollisions)
 import GameTypes
-import Torneos (ejecutarTorneos, mundoAleatorio, updateGame)
+import Torneos (mundoAleatorio, updateGame)
 import Rendering (renderGame)
 
 --------------------------------

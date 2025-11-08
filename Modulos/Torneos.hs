@@ -75,8 +75,8 @@ actualizarTorneos dt estado
   | enPartida estado = do
       case estadoJuego estado of
         Just gs -> do
-          -- Actualizar el juego (versión MINIMALISTA)
-          let gsActualizado = actualizarJuegoSimple dt gs
+          -- Actualizar el juego
+          gsActualizado <- updateGame dt gs
           
           -- Verificar si el torneo terminó
           let terminado = torneoTerminado gsActualizado
@@ -85,7 +85,7 @@ actualizarTorneos dt estado
           then do
             -- Torneo finalizado, procesar resultado
             let resultado = procesarFinTorneo (torneoActual estado) gsActualizado
-            putStrLn $ "\n✓ Torneo " ++ show (torneoActual estado) ++ " completado"
+            putStrLn $ "\n Torneo " ++ show (torneoActual estado) ++ " completado"
             mostrarResultado resultado
             
             pure estado
@@ -107,7 +107,7 @@ actualizarTorneos dt estado
       if nuevoTiempo <= 0
       then do
         -- Iniciar nuevo torneo
-        putStrLn $ "\n→ Iniciando Torneo " ++ show (torneoActual estado + 1) ++ "..."
+        putStrLn $ "\n Iniciando Torneo " ++ show (torneoActual estado + 1) ++ "..."
         nuevoEstadoJuego <- crearNuevoTorneo
         
         pure estado
@@ -122,7 +122,7 @@ actualizarTorneos dt estado
   
   -- Caso 4: Iniciar primer torneo
   | otherwise = do
-      putStrLn $ "\n→ Iniciando Torneo " ++ show (torneoActual estado) ++ "..."
+      putStrLn $ "\n Iniciando Torneo " ++ show (torneoActual estado) ++ "..."
       nuevoEstadoJuego <- crearNuevoTorneo
       
       pure estado
@@ -860,7 +860,7 @@ updateGame dt gs =
         -- ¿Quedan torneos?
         if torneosSobrantes gs > 0
         then do
-          putStrLn $ "→ Iniciando Torneo " ++ show (actualTorneo gs + 1) ++ "..."
+          putStrLn $ " Iniciando Torneo " ++ show (actualTorneo gs + 1) ++ "..."
           nuevoMundo <- mundoAleatorio
           
           pure gs
@@ -939,7 +939,7 @@ updateGame dt gs =
       if length equiposVivos <= 1
         then do
           let ganador = if null equiposVivos then 0 else head equiposVivos
-          putStrLn $ "✓ Torneo " ++ show (actualTorneo gs)
+          putStrLn $ " Torneo " ++ show (actualTorneo gs)
                     ++ " completado - Ganador: Equipo "
                     ++ show ganador
 
