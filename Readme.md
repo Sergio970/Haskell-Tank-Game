@@ -147,7 +147,6 @@ Cuando `tiempo >= tiempoMax`:
 
 - Sonido (explosiones / disparos).
 - Power-ups temporales.
-- Persistencia de estadísticas multi-ronda.
 - Detección de línea de visión con obstáculos sólidos.
 - Configuración JSON / YAML más rica.
 - Modo espectador con cámara orbital.
@@ -161,16 +160,6 @@ ghc -O2 Modulos/Main.hs -output tankgame
 ./tankgame
 ```
 
----
-
-## Licencia
-
-Elige una licencia (MIT recomendado).  
-Ejemplo rápido (añade LICENSE separado):
-
-```
-MIT License © 2024 TuNombre
-```
 
 ---
 
