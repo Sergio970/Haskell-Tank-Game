@@ -13,3 +13,6 @@ obstacles=8
 
 # Numero de repeticiones del torneo
 rondas=5
+
+# Límite de tiempo por torneo (segundos)
+tiempoMax=120

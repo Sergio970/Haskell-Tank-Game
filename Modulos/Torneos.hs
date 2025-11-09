@@ -947,26 +947,42 @@ updateGame dt gs =
 
           equiposVivos = nub (map team (carros m5b))
 
-      if length equiposVivos <= 1
+      limite <- tiempoLimiteDesdeConfig
+      let tiempoSiguiente = tiempoActual + dt
+      if tiempoSiguiente >= limite
         then do
-          let ganador = if null equiposVivos then 0 else head equiposVivos
-          putStrLn $ " Torneo " ++ show (actualTorneo gs)
-                    ++ " completado - Ganador: Equipo "
-                    ++ show ganador
-
+          -- Fin por tiempo: elegir ganador por mayoría de tanques vivos (empate=0)
+          let vivosFinal = carros m6
+              estadisticas = contarPorEquipo vivosFinal
+              ganadorTiempo = if null estadisticas
+                              then 0
+                              else fst $ head $ sortBy (comparing (negate . snd)) estadisticas
           pure gs
             { mundo = m6
-            , tiempo = tiempoActual + dt
+            , tiempo = tiempoSiguiente
             , explosions = todasExplosiones
-            , modo = Victoria ganador
+            , modo = Victoria ganadorTiempo
             , tiempoEsperaVictoria = 3.0
             }
-        else
-          pure gs
-            { mundo = m6
-            , tiempo = tiempoActual + dt
-            , explosions = todasExplosiones
-            }
+        else if length equiposVivos <= 1
+          then do
+            let ganador = if null equiposVivos then 0 else head equiposVivos
+            putStrLn $ " Torneo " ++ show (actualTorneo gs)
+                      ++ " completado - Ganador: Equipo "
+                      ++ show ganador
+            pure gs
+              { mundo = m6
+              , tiempo = tiempoSiguiente
+              , explosions = todasExplosiones
+              , modo = Victoria ganador
+              , tiempoEsperaVictoria = 3.0
+              }
+          else
+            pure gs
+              { mundo = m6
+              , tiempo = tiempoSiguiente
+              , explosions = todasExplosiones
+              }
 
     -- ===========================
     -- MODO: Fin de todos los torneos
@@ -1031,6 +1047,18 @@ rondasDesdeConfig = do
         Right cfg -> pure (max 1 (cfgRounds cfg))
         Left _    -> pure 1
 
+-- Lee límite de tiempo por torneo (segundos, default 120)
+tiempoLimiteDesdeConfig :: IO Float
+tiempoLimiteDesdeConfig = do
+  let path = "config.txt"
+  eres <- try (readFile path) :: IO (Either IOException String)
+  case eres of
+    Left _ -> pure 120.0
+    Right contenido ->
+      case parseConfigDetallado contenido of
+        Right cfg -> pure (max 1.0 (cfgTimeLimit cfg))
+        Left _    -> pure 120.0
+
 -- Estructura interna del parseo
 data ConfigInterna = ConfigInterna
   { cfgTamX      :: Float
@@ -1040,6 +1068,7 @@ data ConfigInterna = ConfigInterna
   , cfgBombs     :: Int
   , cfgObstacles :: Int
   , cfgRounds    :: Int
+  , cfgTimeLimit :: Float    -- + límite de tiempo en segundos
   } deriving (Show)
 
 construirMundoDesdeCfg :: ConfigInterna -> IO Mundo
@@ -1093,10 +1122,17 @@ parseConfigDetallado raw =
                   (Just s, _) -> readMaybe s
                   (_, Just s) -> readMaybe s
                   _           -> Nothing
+      -- tiempo máx: acepta 'tiempoMax', 'timelimit' o 'duracion'
+      timeV = case (lk "tiempomax", lk "timelimit", lk "duracion") of
+                (Just s, _, _) -> readMaybe s
+                (_, Just s, _) -> readMaybe s
+                (_, _, Just s) -> readMaybe s
+                _              -> Nothing
       -- Defaults
       bombsD  = maybe 6 id bombsV
       obstD   = maybe 8 id obstV
       roundsD = maybe 1 id roundsV
+      timeD   = maybe 120.0 id timeV
       -- Si listas vacías, genera 4 por equipo (defaults)
       eq1Final = if null eq1 then replicate 4 Ligero else eq1
       eq2Final = if null eq2 then replicate 4 Pesado else eq2
@@ -1112,6 +1148,7 @@ parseConfigDetallado raw =
                   , cfgBombs = max 0 bombsD
                   , cfgObstacles = max 0 obstD
                   , cfgRounds = max 1 roundsD
+                  , cfgTimeLimit = max 1.0 timeD
                   }
            else Left allErrs
        _ -> Left (allErrs ++ ["No se pudieron leer tamX/tamY como números"])
