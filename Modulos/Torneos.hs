@@ -9,6 +9,10 @@ import Data.List (partition, nub)
 import qualified Data.Map.Strict as Map
 import Graphics.Gloss.Interface.IO.Game (playIO, Event(..), Key(..), SpecialKey(..), KeyState(..))
 import Graphics.Gloss (Display(..), Color(..))
+import Text.Read (readMaybe)
+import Data.Char (toLower, isSpace)
+import Data.List (dropWhileEnd)
+import Control.Exception (try, IOException)            -- nuevo
 
 import Types (TipoCarro(..), MunicionTipo(..), Vector, Size, Position, Value(..))
 import Unidad
@@ -172,6 +176,13 @@ cazacarros cid equipo pos =
                , tripulacionE = tripulacionViva
                , municionesE = replicate 10 (Municion AP 1.0 Map.empty)
                , cadenciaE = 1.5, precisionBaseE = 0.85, memoriaCarroE = memoriaCazacarros } }
+
+-- Helper: crear carro según TipoCarro
+crearCarroPorTipo :: Int -> Int -> (Float, Float) -> TipoCarro -> CarroCombate
+crearCarroPorTipo cid equipo pos tipo = case tipo of
+  Ligero     -> carroLigero cid equipo pos
+  Pesado     -> carroPesado cid equipo pos
+  Cazacarros -> cazacarros cid equipo pos
 
 -- ==========================================================
 -- CREACIÓN Y ACTUALIZACIÓN DE TORNEOS (VERSIÓN PLACEHOLDER)
@@ -483,7 +494,7 @@ dispararSimple :: Int -> CarroCombate -> CarroCombate -> Proyectil
 dispararSimple pid atacante objetivo =
   let (x1, y1) = posicionCarro atacante
       (x2, y2) = posicionCarro objetivo
-      (dx, dy) = normalize (x2 - x1, y2 - y1)
+      (dx, dy) = normalize (x2 - x1, y1 - y2)
       speed    = 400
   in Proyectil
        { proyectilId        = pid
@@ -950,12 +961,12 @@ updateGame dt gs =
             , modo = Victoria ganador
             , tiempoEsperaVictoria = 3.0
             }
-      else
-        pure gs
-          { mundo = m6
-          , tiempo = tiempoActual + dt
-          , explosions = todasExplosiones
-          }
+        else
+          pure gs
+            { mundo = m6
+            , tiempo = tiempoActual + dt
+            , explosions = todasExplosiones
+            }
 
     -- ===========================
     -- MODO: Fin de todos los torneos
@@ -992,3 +1003,150 @@ reiniciarJuego gs = do
     , torneosSobrantes = 0
     , tiempoEsperaVictoria = 3.0
     }
+
+-- Lee el archivo de configuracion y crea un mundo
+mundoDesdeConfig :: IO Mundo
+mundoDesdeConfig = do
+  let path = "config.txt"
+  eres <- try (readFile path) :: IO (Either IOException String)
+  case eres of
+    Left _ -> do
+      putStrLn "No se pudo abrir Modulos/config.txt. Usando mundoAleatorio."
+      mundoAleatorio
+    Right contenido ->
+      case parseConfigDetallado contenido of
+        Left errs -> do
+          putStrLn "Errores en config:"
+          mapM_ (\e -> putStrLn ("  - " ++ e)) errs
+          putStrLn "Usando mundoAleatorio."
+          mundoAleatorio
+        Right cfg -> construirMundoDesdeCfg cfg
+
+-- Estructura interna resultante del parseo
+data ConfigInterna = ConfigInterna
+  { cfgTamX      :: Float
+  , cfgTamY      :: Float
+  , cfgEquipo1   :: [TipoCarro]
+  , cfgEquipo2   :: [TipoCarro]
+  , cfgBombs     :: Int
+  , cfgObstacles :: Int
+  } deriving (Show)
+
+construirMundoDesdeCfg :: ConfigInterna -> IO Mundo
+construirMundoDesdeCfg cfg = do
+  let tamX = cfgTamX cfg
+      tamY = cfgTamY cfg
+      tipos1 = cfgEquipo1 cfg
+      tipos2 = cfgEquipo2 cfg
+  carrosEq1 <- mapM
+    (\(i,t) -> do pos <- posicionPorEquipo 1 (tamX, tamY)
+                  pure $ crearCarroPorTipo i 1 pos t)
+    (zip [1..] tipos1)
+  carrosEq2 <- mapM
+    (\(i,t) -> do pos <- posicionPorEquipo 2 (tamX, tamY)
+                  pure $ crearCarroPorTipo (i+100) 2 pos t)
+    (zip [1..] tipos2)
+
+  bombas <- mapM (\i -> generarBomba i (tamX, tamY)) [1 .. cfgBombs cfg]
+  obstaculosEst <- generarObstaculosEspaciados (cfgObstacles cfg) (tamX, tamY)
+  pure Mundo
+    { carros = carrosEq1 ++ carrosEq2
+    , proyectiles = []
+    , obstaculos = []
+    , bombas = bombas
+    , obstaculosEstaticos = obstaculosEst
+    , tamanoMundo = (tamX, tamY)
+    , memoria = memoriaMundo
+    }
+
+parseConfigDetallado :: String -> Either [String] ConfigInterna
+parseConfigDetallado raw =
+  let ls = map limpiarLinea (lines raw)
+      lsValid = filter (not . null) ls
+      kvs = mapMaybe lineaKV lsValid
+      lk k = lookupCI k kvs
+      errs = concat
+        [ falta "tamX" (lk "tamx")
+        , falta "tamY" (lk "tamy")
+        ]
+      tamXv = lk "tamx" >>= readMaybe
+      tamYv = lk "tamy" >>= readMaybe
+      (eq1Errs, eq1) = leerListaTipos (lk "equipo1")
+      (eq2Errs, eq2) = leerListaTipos (lk "equipo2")
+      bombsV = lk "bombs" >>= readMaybe
+      obstV  = lk "obstacles" >>= readMaybe
+      -- Defaults
+      bombsD = maybe 6 id bombsV
+      obstD  = maybe 8 id obstV
+      -- Si listas vacías, generamos 4 aleatorios cada una (ligero/pesado/cazacarros equiprob)
+      eq1Final = if null eq1 then replicate 4 Ligero else eq1
+      eq2Final = if null eq2 then replicate 4 Pesado else eq2
+      allErrs = errs ++ eq1Errs ++ eq2Errs
+  in case (tamXv, tamYv) of
+       (Just tx, Just ty) ->
+         if null allErrs
+           then Right ConfigInterna
+                  { cfgTamX = tx
+                  , cfgTamY = ty
+                  , cfgEquipo1 = eq1Final
+                  , cfgEquipo2 = eq2Final
+                  , cfgBombs = max 0 bombsD
+                  , cfgObstacles = max 0 obstD
+                  }
+           else Left allErrs
+       _ -> Left (allErrs ++ ["No se pudieron leer tamX/tamY como números"])
+
+-- Normaliza y elimina comentarios
+limpiarLinea :: String -> String
+limpiarLinea = trim . quitarComentario
+  where
+    quitarComentario s =
+      case break (`elem` ['#']) s of
+        (a,_) -> a
+
+lineaKV :: String -> Maybe (String,String)
+lineaKV s =
+  case break (=='=') s of
+    (k,'=':v) -> Just (map toLower (trim k), trim v)
+    _         -> Nothing
+
+lookupCI :: String -> [(String,String)] -> Maybe String
+lookupCI k = lookup k
+
+falta :: String -> Maybe a -> [String]
+falta campo (Just _) = []
+falta campo Nothing  = ["Falta clave obligatoria: " ++ campo]
+
+leerListaTipos :: Maybe String -> ([String], [TipoCarro])
+leerListaTipos Nothing = (["Lista de tipos ausente (se usarán defaults aleatorios)"], [])
+leerListaTipos (Just txt) =
+  let tokens = filter (not . null) $ map trim $ splitMulti [',',';',' '] txt
+      (errs, tipos) = foldr (\tok (es,ts) ->
+                              case parseTipo tok of
+                                Just t  -> (es, t:ts)
+                                Nothing -> (("Tipo desconocido: " ++ tok):es, ts)
+                            ) ([],[]) tokens
+  in (errs, tipos)
+
+parseTipo :: String -> Maybe TipoCarro
+parseTipo s =
+  case map toLower s of
+    "ligero"     -> Just Ligero
+    "l"          -> Just Ligero
+    "pesado"     -> Just Pesado
+    "p"          -> Just Pesado
+    "cazacarros" -> Just Cazacarros
+    "caza"       -> Just Cazacarros
+    "c"          -> Just Cazacarros
+    _            -> Nothing
+
+splitMulti :: [Char] -> String -> [String]
+splitMulti ds = foldr f [""]
+  where
+    f c (a:as)
+      | c `elem` ds = "" : a : as
+      | otherwise   = (c:a):as
+    f _ [] = []
+
+trim :: String -> String
+trim = dropWhile isSpace . dropWhileEnd isSpace

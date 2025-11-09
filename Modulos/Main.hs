@@ -10,7 +10,7 @@ import Bot (botEstrategico, BotAction(..))
 import Physics (updatePosition, vectorNulo, normalize, distanceBetween)
 import Collisions (CollisionEvent(..), checkCollisions)
 import GameTypes
-import Torneos (mundoAleatorio, updateGame)
+import Torneos (mundoAleatorio, updateGame, mundoDesdeConfig)  -- + mundoDesdeConfig
 import Rendering (renderGame)
 
 --------------------------------
@@ -24,7 +24,7 @@ main = do
   numTorneos <- readLn
   
   -- Crear estado inicial del primer torneo
-  mundoInicial <- mundoAleatorio
+  mundoInicial <- mundoDesdeConfig 
   
   let estadoInicial = GameState
         { mundo = mundoInicial
