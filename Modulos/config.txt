@@ -1,7 +1,7 @@
 # Configuración de mundo y equipos
 
-tamX=10
-tamY=10
+tamX=700
+tamY=800
 
 # Tipos por equipo (alias válidos: Ligero|L, Pesado|P, Cazacarros|C|Caza)
 equipo1=L,L,P,C

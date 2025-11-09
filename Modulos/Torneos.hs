@@ -190,7 +190,7 @@ crearCarroPorTipo cid equipo pos tipo = case tipo of
 
 crearNuevoTorneo :: IO GameState
 crearNuevoTorneo = do
-  mundo <- mundoAleatorio
+  mundo <- mundoDesdeConfig
   pure GameState
     { mundo = mundo
     , tiempo = 0.0
@@ -872,7 +872,7 @@ updateGame dt gs =
         if torneosSobrantes gs > 0
         then do
           putStrLn $ " Iniciando Torneo " ++ show (actualTorneo gs + 1) ++ "..."
-          nuevoMundo <- mundoAleatorio
+          nuevoMundo <- mundoDesdeConfig
           
           pure gs
             { mundo = nuevoMundo
@@ -989,7 +989,7 @@ handleEventWithReset event gs = GameTypes.handleEvent event gs
 -- Reinicia el juego con un nuevo mundo aleatorio
 reiniciarJuego :: GameState -> IO GameState
 reiniciarJuego gs = do
-  m0 <- mundoAleatorio  -- Genera un nuevo mundo
+  m0 <- mundoDesdeConfig  -- Genera un nuevo mundo
   pure GameState
     { mundo = m0
     , tiempo = 0
