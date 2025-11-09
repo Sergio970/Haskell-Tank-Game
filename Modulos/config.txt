@@ -1,12 +1,15 @@
 # Configuración de mundo y equipos
 
-tamX=700
+tamX= 700
 tamY=800
 
 # Tipos por equipo (alias válidos: Ligero|L, Pesado|P, Cazacarros|C|Caza)
 equipo1=L,L,P,C
 equipo2=P,P,L,C
 
-# Opcionales
+# Obstaculos
 bombs=6
 obstacles=8
+
+# Numero de repeticiones del torneo
+rondas=5

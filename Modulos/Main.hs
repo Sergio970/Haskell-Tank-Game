@@ -10,7 +10,7 @@ import Bot (botEstrategico, BotAction(..))
 import Physics (updatePosition, vectorNulo, normalize, distanceBetween)
 import Collisions (CollisionEvent(..), checkCollisions)
 import GameTypes
-import Torneos (mundoAleatorio, updateGame, mundoDesdeConfig)  -- + mundoDesdeConfig
+import Torneos (mundoAleatorio, updateGame, mundoDesdeConfig, rondasDesdeConfig)
 import Rendering (renderGame)
 
 --------------------------------
@@ -20,9 +20,8 @@ import Rendering (renderGame)
 main :: IO ()
 main = do
   putStrLn "=== Haskell Tank Game ==="
-  putStrLn "¿Cuántos torneos deseas ejecutar?"
-  numTorneos <- readLn
-  
+  -- ...existing code...
+  rondas <- rondasDesdeConfig
   -- Crear estado inicial del primer torneo
   mundoInicial <- mundoDesdeConfig 
   
@@ -30,13 +29,13 @@ main = do
         { mundo = mundoInicial
         , tiempo = 0.0
         , ronda = 1
-        , modo = Jugando  -- ← Empieza directo, sin menú
+        , modo = Jugando  -- Empieza directo, sin menú
         , explosions = []
         , bgIndex = 1
         , proximoMeteoritoId = 100
         , tiempoProxMeteorito = 2.0
         , actualTorneo = 1
-        , torneosSobrantes = numTorneos - 1  -- Restamos el primero
+        , torneosSobrantes = max 0 (rondas - 1)  -- desde config
         , tiempoEsperaVictoria = 0.0
         }
   
@@ -46,6 +45,6 @@ main = do
     white
     60
     estadoInicial
-    renderGame      -- Tu función de rendering
+    renderGame      -- función de rendering
     handleEvent     -- Manejador de eventos
-    updateGame      -- Tu función de actualización
+    updateGame      -- función de actualización

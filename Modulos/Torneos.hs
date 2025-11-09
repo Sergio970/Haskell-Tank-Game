@@ -973,9 +973,6 @@ updateGame dt gs =
     -- ===========================
     FinTorneos -> pure gs
 
-    -- Fallback (otros modos)
-    _ -> pure gs
-
 handleEventWithReset :: Event -> GameState -> IO GameState
 handleEventWithReset (EventKey (Char 'r') Down _ _) gs = 
   case modo gs of
@@ -1022,7 +1019,19 @@ mundoDesdeConfig = do
           mundoAleatorio
         Right cfg -> construirMundoDesdeCfg cfg
 
--- Estructura interna resultante del parseo
+--Lee número de rondas desde config (default 1)
+rondasDesdeConfig :: IO Int
+rondasDesdeConfig = do
+  let path = "config.txt"
+  eres <- try (readFile path) :: IO (Either IOException String)
+  case eres of
+    Left _ -> pure 1
+    Right contenido ->
+      case parseConfigDetallado contenido of
+        Right cfg -> pure (max 1 (cfgRounds cfg))
+        Left _    -> pure 1
+
+-- Estructura interna del parseo
 data ConfigInterna = ConfigInterna
   { cfgTamX      :: Float
   , cfgTamY      :: Float
@@ -1030,6 +1039,7 @@ data ConfigInterna = ConfigInterna
   , cfgEquipo2   :: [TipoCarro]
   , cfgBombs     :: Int
   , cfgObstacles :: Int
+  , cfgRounds    :: Int
   } deriving (Show)
 
 construirMundoDesdeCfg :: ConfigInterna -> IO Mundo
@@ -1059,6 +1069,10 @@ construirMundoDesdeCfg cfg = do
     , memoria = memoriaMundo
     }
 
+-- ==========================================================
+-- PARSEO DE CONFIGURACIÓN
+-- ==========================================================
+
 parseConfigDetallado :: String -> Either [String] ConfigInterna
 parseConfigDetallado raw =
   let ls = map limpiarLinea (lines raw)
@@ -1075,10 +1089,15 @@ parseConfigDetallado raw =
       (eq2Errs, eq2) = leerListaTipos (lk "equipo2")
       bombsV = lk "bombs" >>= readMaybe
       obstV  = lk "obstacles" >>= readMaybe
+      roundsV = case (lk "rondas", lk "rounds") of
+                  (Just s, _) -> readMaybe s
+                  (_, Just s) -> readMaybe s
+                  _           -> Nothing
       -- Defaults
-      bombsD = maybe 6 id bombsV
-      obstD  = maybe 8 id obstV
-      -- Si listas vacías, generamos 4 aleatorios cada una (ligero/pesado/cazacarros equiprob)
+      bombsD  = maybe 6 id bombsV
+      obstD   = maybe 8 id obstV
+      roundsD = maybe 1 id roundsV
+      -- Si listas vacías, genera 4 por equipo (defaults)
       eq1Final = if null eq1 then replicate 4 Ligero else eq1
       eq2Final = if null eq2 then replicate 4 Pesado else eq2
       allErrs = errs ++ eq1Errs ++ eq2Errs
@@ -1092,6 +1111,7 @@ parseConfigDetallado raw =
                   , cfgEquipo2 = eq2Final
                   , cfgBombs = max 0 bombsD
                   , cfgObstacles = max 0 obstD
+                  , cfgRounds = max 1 roundsD
                   }
            else Left allErrs
        _ -> Left (allErrs ++ ["No se pudieron leer tamX/tamY como números"])
