@@ -2,141 +2,36 @@ module Torneos where
 
 import System.Random (randomRIO)
 import Control.Monad (foldM, replicateM, replicateM_)
-import Data.List (sortBy, nub)
+import Data.List (sortBy, nub, partition)
 import Data.Ord (comparing)
 import Data.Maybe (mapMaybe)
-import Data.List (partition, nub)
 import qualified Data.Map.Strict as Map
 import Graphics.Gloss.Interface.IO.Game (playIO, Event(..), Key(..), SpecialKey(..), KeyState(..))
-import Graphics.Gloss (Display(..), Color(..))
+import Graphics.Gloss (Display(..), Color(..), makeColor)
 import Text.Read (readMaybe)
 import Data.Char (toLower, isSpace)
 import Data.List (dropWhileEnd)
-import Control.Exception (try, IOException)            -- nuevo
+import Control.Exception (try, IOException)
 
 import Types (TipoCarro(..), MunicionTipo(..), Vector, Size, Position, Value(..))
-import Unidad
+import Unidad hiding (buscarObstaculoEstatico)
 import Objeto (Objeto(..))
 import Bot (botEstrategico, BotAction(..))
 import Physics (updatePosition, vectorNulo, normalize, distanceBetween)
 import Collisions (CollisionEvent(..), checkCollisions)
 import GameTypes
 import Rendering
+import qualified Estadisticas as E
 
 -- ==========================================================
--- TIPOS DE DATOS PARA TORNEOS
+-- TIPO ALIAS
 -- ==========================================================
 
--- Resultado de un torneo individual
-data ResultadoTorneo = ResultadoTorneo
-  { numeroTorneo :: Int
-  , ganadorTorneo :: Int          -- ID del equipo ganador
-  , tiempoTotal :: Float          -- Duración del torneo
-  , estadisticasFinales :: [(Int, Int)]  -- (equipoId, tanques_vivos)
-  } deriving (Show)
-
--- Estado del sistema de torneos
-data EstadoTorneos = EstadoTorneos
-  { torneoActual :: Int           -- Número del torneo actual
-  , torneosRestantes :: Int       -- Cuántos torneos quedan por ejecutar
-  , resultados :: [ResultadoTorneo]  -- Historial de resultados
-  , enPartida :: Bool             -- ¿Hay una partida en curso?
-  , tiempoEspera :: Float         -- Tiempo entre torneos (3 segundos)
-  , estadoJuego :: Maybe GameState  -- Estado del juego actual
-  } deriving (Show)
+type GameStateMundo = GameState Mundo E.EstadisticasBot E.EstadisticasTorneo
 
 -- ==========================================================
--- INICIALIZACIÓN DEL SISTEMA DE TORNEOS
+-- CREACIÓN DE CARROS
 -- ==========================================================
-
--- Crear el estado inicial para N torneos consecutivos
-inicializarTorneos :: Int -> EstadoTorneos
-inicializarTorneos numTorneos = EstadoTorneos
-  { torneoActual = 1
-  , torneosRestantes = numTorneos
-  , resultados = []
-  , enPartida = False
-  , tiempoEspera = 0.0
-  , estadoJuego = Nothing
-  }
-
--- ==========================================================
--- LÓGICA PRINCIPAL DE ACTUALIZACIÓN
--- ==========================================================
-
--- Actualizar el sistema de torneos cada frame
-actualizarTorneos :: Float -> EstadoTorneos -> IO EstadoTorneos
-actualizarTorneos dt estado
-  -- Caso 1: Todos los torneos completados
-  | torneosRestantes estado <= 0 = do
-      putStrLn "\n========================================="
-      putStrLn "¡TODOS LOS TORNEOS COMPLETADOS!"
-      putStrLn "========================================="
-      mostrarResumenFinal (resultados estado)
-      pure estado
-  
-  -- Caso 2: Hay una partida en curso
-  | enPartida estado = do
-      case estadoJuego estado of
-        Just gs -> do
-          -- Actualizar el juego
-          gsActualizado <- updateGame dt gs
-          
-          -- Verificar si el torneo terminó
-          let terminado = torneoTerminado gsActualizado
-          
-          if terminado
-          then do
-            -- Torneo finalizado, procesar resultado
-            let resultado = procesarFinTorneo (torneoActual estado) gsActualizado
-            putStrLn $ "\n Torneo " ++ show (torneoActual estado) ++ " completado"
-            mostrarResultado resultado
-            
-            pure estado
-              { enPartida = False
-              , tiempoEspera = 3.0  -- 3 segundos de espera
-              , resultados = resultado : resultados estado
-              , estadoJuego = Nothing
-              }
-          else
-            -- Partida continúa
-            pure estado { estadoJuego = Just gsActualizado }
-        
-        Nothing -> pure estado
-  
-  -- Caso 3: Esperando entre torneos
-  | tiempoEspera estado > 0 = do
-      let nuevoTiempo = tiempoEspera estado - dt
-      
-      if nuevoTiempo <= 0
-      then do
-        -- Iniciar nuevo torneo
-        putStrLn $ "\n Iniciando Torneo " ++ show (torneoActual estado + 1) ++ "..."
-        nuevoEstadoJuego <- crearNuevoTorneo
-        
-        pure estado
-          { torneoActual = torneoActual estado + 1
-          , torneosRestantes = torneosRestantes estado - 1
-          , enPartida = True
-          , tiempoEspera = 0.0
-          , estadoJuego = Just nuevoEstadoJuego
-          }
-      else
-        pure estado { tiempoEspera = nuevoTiempo }
-  
-  -- Caso 4: Iniciar primer torneo
-  | otherwise = do
-      putStrLn $ "\n Iniciando Torneo " ++ show (torneoActual estado) ++ "..."
-      nuevoEstadoJuego <- crearNuevoTorneo
-      
-      pure estado
-        { enPartida = True
-        , estadoJuego = Just nuevoEstadoJuego
-        }
-
---------------------------------
--- Creación de carros
---------------------------------
 
 carroLigero :: Int -> Int -> (Float, Float) -> CarroCombate
 carroLigero cid equipo pos =
@@ -177,7 +72,6 @@ cazacarros cid equipo pos =
                , municionesE = replicate 10 (Municion AP 1.0 Map.empty)
                , cadenciaE = 1.5, precisionBaseE = 0.85, memoriaCarroE = memoriaCazacarros } }
 
--- Helper: crear carro según TipoCarro
 crearCarroPorTipo :: Int -> Int -> (Float, Float) -> TipoCarro -> CarroCombate
 crearCarroPorTipo cid equipo pos tipo = case tipo of
   Ligero     -> carroLigero cid equipo pos
@@ -185,12 +79,21 @@ crearCarroPorTipo cid equipo pos tipo = case tipo of
   Cazacarros -> cazacarros cid equipo pos
 
 -- ==========================================================
--- CREACIÓN Y ACTUALIZACIÓN DE TORNEOS (VERSIÓN PLACEHOLDER)
+-- CREACIÓN DE NUEVO TORNEO
 -- ==========================================================
 
-crearNuevoTorneo :: IO GameState
+crearNuevoTorneo :: IO GameStateMundo
 crearNuevoTorneo = do
   mundo <- mundoDesdeConfig
+
+  let statsIniciales = Map.fromList
+        [ (carroId c, E.inicializarEstadisticasBot
+                        (carroId c)
+                        (team c)
+                        (show $ tipoCarro c))
+        | c <- carros mundo
+        ]
+
   pure GameState
     { mundo = mundo
     , tiempo = 0.0
@@ -200,41 +103,24 @@ crearNuevoTorneo = do
     , bgIndex = 1
     , proximoMeteoritoId = 100
     , tiempoProxMeteorito = 2.0
-    , actualTorneo = 1 
+    , actualTorneo = 1
     , torneosSobrantes = 0
     , tiempoEsperaVictoria = 3.0
+    , estadisticasBots = statsIniciales
+    , historialTorneos = []
     }
 
--- Actualizar juego (MINIMALISTA - solo incrementa tiempo y aplica fricción)
-actualizarJuegoSimple :: Float -> GameState -> GameState
-actualizarJuegoSimple dt gs =
-  let m = mundo gs
-      tiempoNuevo = tiempo gs + dt
-      
-      -- Aplicar fricción básica a carros
-      carrosConFriccion = map aplicarFriccion (carros m)
-      
-      mundoActualizado = m { carros = carrosConFriccion }
-  in gs { mundo = mundoActualizado, tiempo = tiempoNuevo }
-  where
-    aplicarFriccion carro =
-      let (vx, vy) = velocidadCarro carro
-          friccion = 0.95
-          vx' = vx * friccion
-          vy' = vy * friccion
-      in setVelocidadCarro (vx', vy') carro
-
---------------------------------
--- Mundo inicial
---------------------------------
+-- ==========================================================
+-- GENERACIÓN DE MUNDO
+-- ==========================================================
 
 posicionPorEquipo :: Int -> Size -> IO Position
 posicionPorEquipo equipo (tamX, tamY) = do
   let mitadX = tamX / 2
       margen = tamX / 6
       (minX, maxX) = if equipo == 1
-                     then (-mitadX, -margen)
-                     else (margen, mitadX)
+                    then (-mitadX, -margen)
+                    else (margen, mitadX)
   x <- randomRIO (minX, maxX)
   y <- randomRIO (-tamY/2, tamY/2)
   pure (x, y)
@@ -256,13 +142,11 @@ mundoAleatorio = do
   carrosEq1 <- mapM (\cid -> carroAleatorioEquipo cid 1 (tamX, tamY)) [1..numPorEquipo]
   carrosEq2 <- mapM (\cid -> carroAleatorioEquipo (cid + 100) 2 (tamX, tamY)) [1..numPorEquipo]
   let todos = carrosEq1 ++ carrosEq2
-  
-  -- Generar 6 bombas iniciales
+
   bombas <- mapM (\i -> generarBomba i (tamX, tamY)) [1..6]
-  
   obstaculosEst <- generarObstaculosEspaciados 8 (tamX, tamY)
-  
-  pure Mundo 
+
+  pure Mundo
     { carros = todos
     , proyectiles = []
     , obstaculos = []
@@ -272,7 +156,6 @@ mundoAleatorio = do
     , memoria = memoriaMundo
     }
 
--- Genera una bomba aleatoria
 generarBomba :: Int -> Size -> IO Bomba
 generarBomba bid (tamX, tamY) = do
   x <- randomRIO (-tamX/2 + 20, tamX/2 - 20)
@@ -280,25 +163,18 @@ generarBomba bid (tamX, tamY) = do
   radio <- randomRIO (6.0, 12.0)
   pure $ Bomba { bombaId = bid, posicionBomba = (x,y), radioBomba = radio, activaBomba = False, tiempoBomba = 3.0 }
 
--- Genera un meteorito aleatorio
 generarMeteorito :: Int -> Size -> IO Meteorito
 generarMeteorito mid (tamX, tamY) = do
-  -- Decidir si aparece en izquierda o derecha
   lado <- randomRIO (0 :: Int, 1)
-  
   let (posX, dirX) = if lado == 0
-                     then (-tamX/2 + 20, 150)   -- Izquierda → derecha
-                     else (tamX/2 - 20, -150)   -- Derecha → izquierda
-  
+                    then (-tamX/2 + 20, 150)
+                    else (tamX/2 - 20, -150)
   posY <- randomRIO (-tamY/2, tamY/2)
   velY <- randomRIO (-20, 20)
-  
   tamano <- randomRIO (15, 40)
   rotInicial <- randomRIO (0, 360)
   velRot <- randomRIO (-5, 5)
-  
   let vidaMet = round (tamano * 5)
-  
   pure Meteorito
     { meteoritoId = mid
     , posicionMeteorito = (posX, posY)
@@ -310,7 +186,6 @@ generarMeteorito mid (tamX, tamY) = do
     , estelas = []
     }
 
--- Genera múltiples meteoritos
 generarMeteoritos :: Int -> Size -> IO [Meteorito]
 generarMeteoritos n tam = mapM (\i -> generarMeteorito i tam) [1..n]
 
@@ -327,189 +202,63 @@ generarObstaculoEstatico oid (tamX, tamY) = do
     , tipoVisual = tipo
     }
 
--- Genera obstáculos con separación mínima entre ellos
 generarObstaculosEspaciados :: Int -> Size -> IO [ObstaculoEstatico]
 generarObstaculosEspaciados n tam = generarConDistancia [] n 0
   where
-    distanciaMinima = 100.0  -- Distancia mínima entre obstáculos (ajustable)
-    maxIntentos = 50         -- Intentos máximos por obstáculo
-    
+    distanciaMinima = 100.0
+    maxIntentos = 50
+
     generarConDistancia acc 0 _ = pure acc
     generarConDistancia acc restantes intentos
-      | intentos > maxIntentos = 
-          -- Si falla muchas veces, aceptar el candidato de todos modos
+      | intentos > maxIntentos =
           generarConDistancia acc (restantes - 1) 0
       | otherwise = do
           candidato <- generarObstaculoEstatico (n - restantes + 1) tam
           let (cx, cy) = posicionObstaculoEstatico candidato
-              muyCerca obs = 
+              muyCerca obs =
                 let (ox, oy) = posicionObstaculoEstatico obs
                     dx = ox - cx
                     dy = oy - cy
                     dist = sqrt (dx*dx + dy*dy)
-                    -- Sumar radios para evitar superposición
                     radioTotal = tamanoObstaculoEstatico candidato + tamanoObstaculoEstatico obs
                 in dist < (distanciaMinima + radioTotal)
-          
+
           if null acc || not (any muyCerca acc)
             then generarConDistancia (candidato:acc) (restantes - 1) 0
-            else generarConDistancia acc restantes (intentos + 1)  -- Reintentar
+            else generarConDistancia acc restantes (intentos + 1)
 
 -- ==========================================================
--- CONDICIÓN DE FINALIZACIÓN
+-- SISTEMA DE COMBATE
 -- ==========================================================
-
--- Verificar si un torneo ha terminado
-torneoTerminado :: GameState -> Bool
-torneoTerminado gs =
-  let equiposVivos = contarEquiposVivos (mundo gs)
-  in length equiposVivos <= 1  -- Solo queda 1 equipo (o ninguno)
-
--- Contar cuántos equipos tienen tanques vivos
-contarEquiposVivos :: Mundo -> [Int]
-contarEquiposVivos m =
-  let carrosVivos = filter (\c -> energia c > 0) (carros m)
-      equipos = map team carrosVivos
-  in nub equipos
-
--- ==========================================================
--- PROCESAMIENTO DE RESULTADOS
--- ==========================================================
-
--- Procesar el resultado de un torneo finalizado
-procesarFinTorneo :: Int -> GameState -> ResultadoTorneo
-procesarFinTorneo numTorneo gs =
-  let m = mundo gs
-      carrosVivos = filter (\c -> energia c > 0) (carros m)
-      
-      -- Estadísticas por equipo
-      estadisticas = contarPorEquipo carrosVivos
-      
-      -- Determinar ganador (equipo con más tanques vivos)
-      ganador = if null estadisticas
-                then 0  -- Empate (todos muertos)
-                else fst $ head $ sortBy (comparing (negate . snd)) estadisticas
-  in ResultadoTorneo
-    { numeroTorneo = numTorneo
-    , ganadorTorneo = ganador
-    , tiempoTotal = tiempo gs
-    , estadisticasFinales = estadisticas
-    }
-
--- Contar tanques vivos por equipo
-contarPorEquipo :: [CarroCombate] -> [(Int, Int)]
-contarPorEquipo carros =
-  let equipos = nub $ map team carros
-      contar eq = (eq, length $ filter (\c -> team c == eq) carros)
-  in map contar equipos
-
--- ==========================================================
--- VISUALIZACIÓN DE RESULTADOS
--- ==========================================================
-
--- Mostrar resultado de un torneo individual
-mostrarResultado :: ResultadoTorneo -> IO ()
-mostrarResultado resultado = do
-  putStrLn $ "  Ganador: Equipo " ++ show (ganadorTorneo resultado)
-  putStrLn $ "  Tiempo: " ++ show (round (tiempoTotal resultado)) ++ "s"
-  putStrLn "  Tanques sobrevivientes:"
-  mapM_ (\(eq, n) -> putStrLn $ "    Equipo " ++ show eq ++ ": " ++ show n ++ " tanques")
-    (estadisticasFinales resultado)
-
--- Mostrar resumen final de todos los torneos
-mostrarResumenFinal :: [ResultadoTorneo] -> IO ()
-mostrarResumenFinal resultados = do
-  let total = length resultados
-  putStrLn $ "\nTotal de torneos: " ++ show total
-  putStrLn "\nGanadores por torneo:"
-  mapM_ (\r -> putStrLn $ "  Torneo " ++ show (numeroTorneo r) 
-                        ++ ": Equipo " ++ show (ganadorTorneo r))
-    (reverse resultados)
-  
-  -- Estadísticas generales
-  putStrLn "\nEstadísticas generales:"
-  let victoriasEquipo1 = length $ filter (\r -> ganadorTorneo r == 1) resultados
-      victoriasEquipo2 = length $ filter (\r -> ganadorTorneo r == 2) resultados
-      empates = length $ filter (\r -> ganadorTorneo r == 0) resultados
-  
-  putStrLn $ "  Equipo 1: " ++ show victoriasEquipo1 ++ " victorias"
-  putStrLn $ "  Equipo 2: " ++ show victoriasEquipo2 ++ " victorias"
-  if empates > 0
-    then putStrLn $ "  Empates: " ++ show empates
-    else pure ()
-  
-  -- Tiempo promedio
-  let tiempoPromedio = sum (map tiempoTotal resultados) / fromIntegral total
-  putStrLn $ "\nTiempo promedio por torneo: " ++ show (round tiempoPromedio) ++ "segundos."
-
--- =====================================================
--- Ejecutar múltiples torneos
--- =====================================================
-
-ejecutarTorneos :: Int -> IO ()
-ejecutarTorneos n = do
-  replicateM_ n ejecutarTorneo
-
--- =====================================================
--- Un solo torneo
--- =====================================================
-
-ejecutarTorneo :: IO ()
-ejecutarTorneo = do
-  putStrLn "Generando mundo aleatorio..."
-  m0 <- mundoAleatorio
-  let initial = GameState
-                  { mundo = m0
-                  , tiempo = 0
-                  , ronda = 1
-                  , modo = Menu
-                  , explosions = []
-                  , bgIndex = 1
-                  , proximoMeteoritoId = 1000
-                  , tiempoProxMeteorito = 2.0
-                  , actualTorneo = 1 
-                  , torneosSobrantes = 0
-                  , tiempoEsperaVictoria = 3.0
-                  }
-  putStrLn "Iniciando torneo..."
-  playIO window backgroundColor fps initial renderGame handleEventWithReset updateGame
-  putStrLn "Torneo finalizado."
-
---------------------------------
--- Sistema de combate
---------------------------------
-
-procesar (mundo, exps) (RobotObstaculoEstatico cid oid) =
-  case (buscarCarro cid (carros mundo), buscarObstaculoEstatico oid (obstaculosEstaticos mundo)) of
-    (Just c, Just obs) -> do
-      let (cx, cy) = posicionCarro c
-          (ox, oy) = posicionObstaculoEstatico obs
-          (dx, dy) = normalize (cx - ox, cy - oy)
-          pushForce = 25.0
-          (vx, vy) = velocidadCarro c
-          c' = c { velocidad = (vx + dx * pushForce, vy + dy * pushForce) }
-      pure (reemplazarCarro c' (carros mundo) mundo, exps)
 
 dispararSimple :: Int -> CarroCombate -> CarroCombate -> Proyectil
 dispararSimple pid atacante objetivo =
   let (x1, y1) = posicionCarro atacante
       (x2, y2) = posicionCarro objetivo
-      (dx, dy) = normalize (x2 - x1, y1 - y2)
+      (dx, dy) = normalize (x2 - x1, y2 - y1)
       speed    = 400
   in Proyectil
-       { proyectilId        = pid
-       , posicionProyectil  = (x1, y1)
-       , direccionProyectil = 0
-       , velocidadProyectil = (dx * speed, dy * speed)
-       , municionProyectil  = Municion AP 1.0 Map.empty
-       , disparadorTeam     = team atacante
-       , memoriaProj        = Map.fromList [("ttl", VFloat 3.0)]
-       }
+      { proyectilId        = pid
+      , posicionProyectil  = (x1, y1)
+      , direccionProyectil = 0
+      , velocidadProyectil = (dx * speed, dy * speed)
+      , municionProyectil  = Municion AP 1.0 Map.empty
+      , disparadorTeam     = team atacante
+      , memoriaProj        = Map.fromList [("ttl", VFloat 3.0), ("disparadorId", VInt (carroId atacante))]
+      }
 
-aplicarAccionesBot :: Float -> Mundo -> Float -> (CarroCombate, [BotAction]) -> IO Mundo
-aplicarAccionesBot dt m tiempoActual (carro, acts) = foldM aplicar m acts
+--  Ahora registra disparos
+aplicarAccionesBot
+  :: Float
+  -> Mundo
+  -> Float
+  -> (CarroCombate, [BotAction])
+  -> Map.Map Int E.EstadisticasBot
+  -> IO (Mundo, Map.Map Int E.EstadisticasBot)
+aplicarAccionesBot dt m tiempoActual (carro, acts) stats0 =
+  foldM aplicar (m, stats0) acts
   where
-    aplicar mundo (DispararA objetivoId) =
+    aplicar (mundo, stats) (DispararA objetivoId) =
       case buscarCarro objetivoId (carros mundo) of
         Just obj -> do
           let memoriaCar = memoriaCarro carro
@@ -517,33 +266,42 @@ aplicarAccionesBot dt m tiempoActual (carro, acts) = foldM aplicar m acts
                 Just (VFloat t) -> t
                 _               -> 0.0
               cooldown = cadencia carro
-              
+
           if tiempoActual - ultimoDisparo >= cooldown && not (null (municiones carro))
             then do
               let pid = length (proyectiles mundo) + 1
                   proj = dispararSimple pid carro obj
                   memoriaActualizada = Map.insert "ultimoDisparo" (VFloat tiempoActual) memoriaCar
                   carroActualizado = setMemoriaCarro memoriaActualizada carro
-              pure $ mundo { proyectiles = proj : proyectiles mundo
+
+                  -- ✅ Registrar disparo sobre el mapa de stats que ya viene actualizado
+                  statsActualizados = E.registrarDisparo (carroId carro) stats
+
+              pure ( mundo { proyectiles = proj : proyectiles mundo
                            , carros = reemplazarCarroEnLista carroActualizado (carros mundo) }
-            else pure mundo
-        Nothing  -> pure mundo
-        
-    aplicar mundo (Mover (dx, dy)) =
+                   , statsActualizados )
+            else pure (mundo, stats)
+        Nothing  -> pure (mundo, stats)
+
+    aplicar (mundo, stats) (Mover (dx, dy)) =
       let speed   = case tipoCarro carro of
                       Ligero     -> 25
                       Cazacarros -> 18
                       Pesado     -> 12
           nuevaVel = (dx * speed, dy * speed)
           carro'   = carro { velocidad = nuevaVel }
-      in pure $ reemplazarCarro carro' (carros mundo) mundo
-      
-    aplicar mundo (Girar ang) =
+      in pure (reemplazarCarro carro' (carros mundo) mundo, stats)
+
+    aplicar (mundo, stats) (Girar ang) =
       let angActual = getdireccionCanon carro
           maxGiro = 5.0
           angFinal = max (-maxGiro) (min maxGiro ang)
           c' = carro { direccionCanon = angActual + angFinal }
-      in pure $ reemplazarCarro c' (carros mundo) mundo
+      in pure (reemplazarCarro c' (carros mundo) mundo, stats)
+
+-- ==========================================================
+-- HELPERS
+-- ==========================================================
 
 safeHead :: [a] -> Maybe a
 safeHead [] = Nothing
@@ -558,9 +316,11 @@ buscarProyectil pid = safeHead . filter ((== pid) . proyectilId)
 buscarMeteorito :: Int -> [Meteorito] -> Maybe Meteorito
 buscarMeteorito mid = safeHead . filter ((== mid) . meteoritoId)
 
--- Nuevos helpers: bombas
 buscarBomba :: Int -> [Bomba] -> Maybe Bomba
 buscarBomba bid = safeHead . filter ((== bid) . bombaId)
+
+buscarObstaculoEstatico :: Int -> [ObstaculoEstatico] -> Maybe ObstaculoEstatico
+buscarObstaculoEstatico oid = safeHead . filter ((== oid) . obstaculoEstaticoId)
 
 reemplazarBomba :: Bomba -> [Bomba] -> Mundo -> Mundo
 reemplazarBomba b bs m = m { bombas = b : filter ((/= bombaId b) . bombaId) bs }
@@ -572,7 +332,7 @@ reemplazarCarroEnLista :: CarroCombate -> [CarroCombate] -> [CarroCombate]
 reemplazarCarroEnLista c cs = c : filter ((/= carroId c) . carroId) cs
 
 reemplazarMeteorito :: Meteorito -> [Meteorito] -> Mundo -> Mundo
-reemplazarMeteorito met mets m = 
+reemplazarMeteorito met mets m =
   m { obstaculos = met : filter ((/= meteoritoId met) . meteoritoId) mets }
 
 limpiarProyectiles :: Float -> Mundo -> Mundo
@@ -591,22 +351,19 @@ limpiarProyectiles dt m =
       ps2 = filter (\p -> dentro (posicionProyectil p) && vivosTTL p) ps1
   in m { proyectiles = ps2 }
 
--- Actualizar meteoritos
+-- ==========================================================
+-- ACTUALIZAR METEORITOS
+-- ==========================================================
+
 actualizarMeteoritos :: Float -> Mundo -> Mundo
 actualizarMeteoritos dt m =
   let mets = obstaculos m
       (tamX, tamY) = tamanoMundo m
-      
-      -- Actualizar posición y estelas
       mets' = map (actualizarMeteorito dt (tamX, tamY)) mets
-      
-      -- Generar nuevas estelas
       metsConEstelas = map (\met ->
         let nuevasEstelas = generarEstelasDesdeMeteorito met
         in met { estelas = nuevasEstelas ++ estelas met }
         ) mets'
-      
-      -- Filtrar destruidos
       metsVivos = filter (\met -> vida met > 0) metsConEstelas
   in m { obstaculos = metsVivos }
 
@@ -614,49 +371,43 @@ actualizarMeteorito :: Float -> Size -> Meteorito -> Meteorito
 actualizarMeteorito dt (tamX, tamY) met =
   let (x, y) = posicionMeteorito met
       (vx, vy) = velocidadMeteorito met
-      
       x' = x + vx * dt
       y' = y + vy * dt
       y'' = max (-tamY/2) (min (tamY/2) y')
-      
-      -- Actualizar estelas del meteorito
       estelas' = map (\e -> e { estelaVida = estelaVida e - dt }) (estelas met)
       estelasVivas = filter (\e -> estelaVida e > 0) estelas'
-  in met 
+  in met
       { posicionMeteorito = (x', y'')
       , velocidadMeteorito = (vx, vy)
       , rotacionMeteorito = rotacionMeteorito met + velocidadRotacion met
-      , estelas = estelasVivas  -- se actualizan junto con el meteorito
+      , estelas = estelasVivas
       }
 
 generarEstelasDesdeMeteorito :: Meteorito -> [Estela]
 generarEstelasDesdeMeteorito met =
   let (x, y) = posicionMeteorito met
   in [Estela
-       { estelaId = 100000 + meteoritoId met
-       , estelaPos = (x, y)
-       , estelaVida = 0.5
-       , estelaRadio = tamanoMeteorito met * 0.7
-       , estelaIntensidad = 0.3
-       }
-     ]
+      { estelaId = 100000 + meteoritoId met
+      , estelaPos = (x, y)
+      , estelaVida = 0.5
+      , estelaRadio = tamanoMeteorito met * 0.7
+      , estelaIntensidad = 0.3
+      }
+    ]
 
-actualizarMeteoritosEnPartida :: Float -> GameState -> IO GameState
+actualizarMeteoritosEnPartida :: Float -> GameStateMundo -> IO GameStateMundo
 actualizarMeteoritosEnPartida dt gs = do
   let tiempoProx = tiempoProxMeteorito gs - dt
       proximoId = proximoMeteoritoId gs
       m = mundo gs
       (tamX, tamY) = tamanoMundo m
-  
+
   if tiempoProx <= 0
     then do
-      -- Generar nuevo meteorito
       nuevoMet <- generarMeteorito proximoId (tamX, tamY)
       intervalo <- randomRIO (1.0, 4.0)
-      
       let mundoActualizado = m { obstaculos = nuevoMet : obstaculos m }
-      
-      pure gs 
+      pure gs
         { mundo = mundoActualizado
         , proximoMeteoritoId = proximoId + 1
         , tiempoProxMeteorito = intervalo
@@ -664,48 +415,60 @@ actualizarMeteoritosEnPartida dt gs = do
     else
       pure gs { tiempoProxMeteorito = tiempoProx }
 
-aplicarEventosColision :: [CollisionEvent] -> Mundo -> GameState -> IO (Mundo, [Explosion])
-aplicarEventosColision eventos m gs = foldM procesar (m, []) eventos
+-- ==========================================================
+-- COLISIONES CON ESTADÍSTICAS
+-- ==========================================================
+
+aplicarEventosColisionConStats :: [CollisionEvent] -> Mundo -> GameStateMundo -> Map.Map Int E.EstadisticasBot -> IO (Mundo, [Explosion], Map.Map Int E.EstadisticasBot)
+aplicarEventosColisionConStats eventos m gs statsInicial = foldM procesar (m, [], statsInicial) eventos
   where
-    procesar (mundo, exps) (RobotHit cid pid) =
+    procesar (mundo, exps, stats) (RobotHit cid pid) =
       case (buscarCarro cid (carros mundo), buscarProyectil pid (proyectiles mundo)) of
         (Just car, Just proj) ->
           if disparadorTeam proj == team car
-            then pure (mundo, exps)
-            else
+            then pure (mundo, exps, stats)
+            else do
               let municion = municionProyectil proj
                   blindajeCarro = blindaje car
                   danoBase = case tipoMun municion of
-                               AP -> 20
-                               AE -> 15
+                              AP -> 20
+                              AE -> 15
                   factorBlindaje = max 0.3 (1.0 - blindajeCarro / 300.0)
                   danoFinal = round (fromIntegral danoBase * factorBlindaje)
-                  
+
                   carDanado = setEnergia (max 0 (energia car - danoFinal)) car
                   mundoSinProj = mundo { proyectiles = filter ((/= pid) . proyectilId) (proyectiles mundo) }
-                  
-                  -- Crear explosión de impacto
-                  explosion = Explosion 
+
+                  explosion = Explosion
                     { explosionPos = posicionProyectil proj
                     , explosionTime = 0.5
                     , explosionType = ImpactExplosion
                     }
-              in pure (reemplazarCarro carDanado (carros mundoSinProj) mundoSinProj, explosion : exps)
-        _ -> pure (mundo, exps)
 
-    procesar (mundo, exps) (RobotObstaculoEstatico cid oid) =
+                  disparadorId = case Map.lookup "disparadorId" (memoriaProj proj) of
+                    Just (VInt did) -> Just did
+                    _ -> Nothing
+
+                  statsActualizados = case disparadorId of
+                    Just did -> E.registrarImpacto did danoFinal stats
+                    Nothing  -> stats
+
+              pure (reemplazarCarro carDanado (carros mundoSinProj) mundoSinProj, explosion : exps, statsActualizados)
+        _ -> pure (mundo, exps, stats)
+
+    procesar (mundo, exps, stats) (RobotObstaculoEstatico cid oid) =
       case (buscarCarro cid (carros mundo), buscarObstaculoEstatico oid (obstaculosEstaticos mundo)) of
         (Just car, Just obs) -> do
           let (cx, cy) = posicionCarro car
               (ox, oy) = posicionObstaculoEstatico obs
               (dx, dy) = normalize (cx - ox, cy - oy)
-              pushForce = 30.0  -- Fuerza de empuje al chocar
+              pushForce = 30.0
               (vx, vy) = velocidadCarro car
               car' = car { velocidad = (vx + dx * pushForce, vy + dy * pushForce) }
-          pure (reemplazarCarro car' (carros mundo) mundo, exps)
-        _ -> pure (mundo, exps)
-    
-    procesar (mundo, exps) (RobotRobot cid1 cid2) =
+          pure (reemplazarCarro car' (carros mundo) mundo, exps, stats)
+        _ -> pure (mundo, exps, stats)
+
+    procesar (mundo, exps, stats) (RobotRobot cid1 cid2) =
       case (buscarCarro cid1 (carros mundo), buscarCarro cid2 (carros mundo)) of
         (Just c1, Just c2) -> do
           let equipo1 = team c1
@@ -716,20 +479,26 @@ aplicarEventosColision eventos m gs = foldM procesar (m, []) eventos
               (vx2, vy2) = velocidadCarro c2
               (dx, dy) = normalize (x1 - x2, y1 - y2)
               pushForce = 12.0
-              
-              (c1', c2') = if equipo1 == equipo2
-                          then ( c1 { velocidad = (vx1 + dx * pushForce, vy1 + dy * pushForce) }
-                               , c2 { velocidad = (vx2 - dx * pushForce, vy2 - dy * pushForce) } )
-                          else let dano = 10
-                                   c1Danado = setEnergia (max 0 (energia c1 - dano)) c1
-                                   c2Danado = setEnergia (max 0 (energia c2 - dano)) c2
-                               in ( c1Danado { velocidad = (vx1 + dx * pushForce, vy1 + dy * pushForce) }
-                                  , c2Danado { velocidad = (vx2 - dx * pushForce, vy2 - dy * pushForce) } )
-          
-          pure (reemplazarCarro c2' (carros mundo) (reemplazarCarro c1' (carros mundo) mundo), exps)
-        _ -> pure (mundo, exps)
-    
-    procesar (mundo, exps) (FronteraCarro cid) =
+
+              (c1', c2') =
+                if equipo1 == equipo2
+                  then
+                    ( c1 { velocidad = (vx1 + dx * pushForce, vy1 + dy * pushForce) }
+                    , c2 { velocidad = (vx2 - dx * pushForce, vy2 - dy * pushForce) }
+                    )
+                  else
+                    let dano     = 10
+                        c1Danado = setEnergia (max 0 (energia c1 - dano)) c1
+                        c2Danado = setEnergia (max 0 (energia c2 - dano)) c2
+                    in
+                    ( c1Danado { velocidad = (vx1 + dx * pushForce, vy1 + dy * pushForce) }
+                    , c2Danado { velocidad = (vx2 - dx * pushForce, vy2 - dy * pushForce) }
+                    )
+
+          pure (reemplazarCarro c2' (carros mundo) (reemplazarCarro c1' (carros mundo) mundo), exps, stats)
+        _ -> pure (mundo, exps, stats)
+
+    procesar (mundo, exps, stats) (FronteraCarro cid) =
       case buscarCarro cid (carros mundo) of
         Just c -> do
           let (x, y) = posicionCarro c
@@ -741,13 +510,13 @@ aplicarEventosColision eventos m gs = foldM procesar (m, []) eventos
               vx' = if x <= (-tamX/2 + margin) || x >= (tamX/2 - margin) then -vx * 0.7 else vx
               vy' = if y <= (-tamY/2 + margin) || y >= (tamY/2 - margin) then -vy * 0.7 else vy
               c' = c { posicion = (x', y'), velocidad = (vx', vy') }
-          pure (reemplazarCarro c' (carros mundo) mundo, exps)
-        Nothing -> pure (mundo, exps)
-    
-    procesar (mundo, exps) (FronteraProyectil pid) =
-      pure (mundo { proyectiles = filter ((/= pid) . proyectilId) (proyectiles mundo) }, exps)
+          pure (reemplazarCarro c' (carros mundo) mundo, exps, stats)
+        Nothing -> pure (mundo, exps, stats)
 
-    procesar (mundo, exps) (RobotMeteorito cid mid) =
+    procesar (mundo, exps, stats) (FronteraProyectil pid) =
+      pure (mundo { proyectiles = filter ((/= pid) . proyectilId) (proyectiles mundo) }, exps, stats)
+
+    procesar (mundo, exps, stats) (RobotMeteorito cid mid) =
       case (buscarCarro cid (carros mundo), buscarMeteorito mid (obstaculos mundo)) of
         (Just car, Just met) -> do
           let dano = round (tamanoMeteorito met / 2)
@@ -759,10 +528,10 @@ aplicarEventosColision eventos m gs = foldM procesar (m, []) eventos
               (vx, vy) = velocidadCarro car
               carEmpujado = carDanado { velocidad = (vx + dx * pushForce, vy + dy * pushForce) }
               explosion = Explosion (posicionCarro car) 0.3 ImpactExplosion
-          pure (reemplazarCarro carEmpujado (carros mundo) mundo, explosion : exps)
-        _ -> pure (mundo, exps)
+          pure (reemplazarCarro carEmpujado (carros mundo) mundo, explosion : exps, stats)
+        _ -> pure (mundo, exps, stats)
 
-    procesar (mundo, exps) (ProyectilMeteorito pid mid) =
+    procesar (mundo, exps, stats) (ProyectilMeteorito pid mid) =
       case (buscarProyectil pid (proyectiles mundo), buscarMeteorito mid (obstaculos mundo)) of
         (Just proj, Just met) -> do
           let dano = 20
@@ -775,10 +544,10 @@ aplicarEventosColision eventos m gs = foldM procesar (m, []) eventos
               explosionExtra = if vida metDanado <= 0
                               then [Explosion (posicionMeteorito met) 1.0 DeathExplosion]
                               else []
-          pure (mundoActualizado, explosion : (explosionExtra ++ exps))
-        _ -> pure (mundo, exps)
+          pure (mundoActualizado, explosion : (explosionExtra ++ exps), stats)
+        _ -> pure (mundo, exps, stats)
 
-    procesar (mundo, exps) (RobotEstela cid eid) =
+    procesar (mundo, exps, stats) (RobotEstela cid eid) =
       case buscarCarro cid (carros mundo) of
         Just car -> do
           let todasEstelas = concat [estelas met | met <- obstaculos mundo]
@@ -787,93 +556,95 @@ aplicarEventosColision eventos m gs = foldM procesar (m, []) eventos
             Just est -> do
               let dano = max 1 (round (2.0 * estelaIntensidad est))
                   carDanado = setEnergia (max 0 (energia car - dano)) car
-              pure (reemplazarCarro carDanado (carros mundo) mundo, exps)
-            Nothing -> pure (mundo, exps)
-        _ -> pure (mundo, exps)
+              pure (reemplazarCarro carDanado (carros mundo) mundo, exps, stats)
+            Nothing -> pure (mundo, exps, stats)
+        _ -> pure (mundo, exps, stats)
 
-    -- Activar bomba por contacto con tanque
-    procesar (mundo, exps) (RobotBomba _cid bid) =
+    procesar (mundo, exps, stats) (RobotBomba _cid bid) =
       case buscarBomba bid (bombas mundo) of
         Just b ->
           if activaBomba b
-            then pure (mundo, exps)
+            then pure (mundo, exps, stats)
             else
               let b' = b { activaBomba = True, tiempoBomba = 3.0 }
-              in pure (reemplazarBomba b' (bombas mundo) mundo, exps)
-        Nothing -> pure (mundo, exps)
+              in pure (reemplazarBomba b' (bombas mundo) mundo, exps, stats)
+        Nothing -> pure (mundo, exps, stats)
 
-    -- Activar bomba por contacto con meteorito
-    procesar (mundo, exps) (MeteoritoBomba _mid bid) =
+    procesar (mundo, exps, stats) (MeteoritoBomba _mid bid) =
       case buscarBomba bid (bombas mundo) of
         Just b ->
           if activaBomba b
-            then pure (mundo, exps)
+            then pure (mundo, exps, stats)
             else
               let b' = b { activaBomba = True, tiempoBomba = 3.0 }
-              in pure (reemplazarBomba b' (bombas mundo) mundo, exps)
-        Nothing -> pure (mundo, exps)
+              in pure (reemplazarBomba b' (bombas mundo) mundo, exps, stats)
+        Nothing -> pure (mundo, exps, stats)
 
--- Actualizar bombas: cuenta atrás + explosión con daño radial
+-- ==========================================================
+-- ACTUALIZAR BOMBAS
+-- ==========================================================
+
 actualizarBombasEnMundo :: Float -> Mundo -> (Mundo, [Explosion])
 actualizarBombasEnMundo dt m =
-  let
-    -- Reducir el tiempo de bombas activas
-    step b = if activaBomba b
-             then b { tiempoBomba = tiempoBomba b - dt }
-             else b
-    bs1 = map step (bombas m)
+  let step b = if activaBomba b
+            then b { tiempoBomba = tiempoBomba b - dt }
+            else b
+      bs1 = map step (bombas m)
+      (detonan, vivas) = partition (\b -> activaBomba b && tiempoBomba b <= 0) bs1
 
-    -- Bombas que explotan
-    (detonan, vivas) = partition (\b -> activaBomba b && tiempoBomba b <= 0) bs1
+      aplicarDanioBomba :: Bomba -> [CarroCombate] -> [CarroCombate]
+      aplicarDanioBomba b cs =
+        let (bx, by) = posicionBomba b
+            radioImpacto = radioBomba b * 10.0
+            maxDano = 80
+        in [ if distanceBetween (posicionCarro c) (bx, by) <= radioImpacto
+            then
+              let dist = distanceBetween (posicionCarro c) (bx, by)
+                  factor = max 0 (1.0 - dist / radioImpacto)
+                  dano = round (fromIntegral maxDano * factor)
+              in setEnergia (max 0 (energia c - dano)) c
+            else c
+           | c <- cs ]
 
-    -- Daño a los carros por explosión
-    aplicarDanioBomba :: Bomba -> [CarroCombate] -> [CarroCombate]
-    aplicarDanioBomba b cs =
-      let (bx, by) = posicionBomba b
-          radioImpacto = radioBomba b * 10.0
-          maxDano = 80  -- daño máximo en el centro
-      in [ if distanceBetween (posicionCarro c) (bx, by) <= radioImpacto
-           then
-             let dist = distanceBetween (posicionCarro c) (bx, by)
-                 factor = max 0 (1.0 - dist / radioImpacto)
-                 dano = round (fromIntegral maxDano * factor)
-             in setEnergia (max 0 (energia c - dano)) c
-           else c
-         | c <- cs ]
+      carrosDanados = foldr aplicarDanioBomba (carros m) detonan
 
-    -- Aplicar daño de todas las bombas que detonan
-    carrosDanados = foldr aplicarDanioBomba (carros m) detonan
-
-    -- Crear explosiones visuales
-    exps = [ Explosion
-              { explosionPos = posicionBomba b
-              , explosionTime = 0.8
-              , explosionType = DeathExplosion
-              }
-           | b <- detonan ]
-
+      exps = [ Explosion
+                { explosionPos = posicionBomba b
+                , explosionTime = 0.8
+                , explosionType = DeathExplosion
+                }
+            | b <- detonan ]
   in ( m { bombas = vivas, carros = carrosDanados }, exps )
 
-updateGame :: Float -> GameState -> IO GameState
-updateGame dt gs = 
-  case modo gs of
+-- ==========================================================
+-- UPDATE GAME - FUNCIÓN PRINCIPAL
+-- ==========================================================
 
+updateGame :: Float -> GameStateMundo -> IO GameStateMundo
+updateGame dt gs =
+  case modo gs of
     Menu -> pure gs
 
-    -- ===========================
-    -- MODO: Victoria entre torneos
-    -- ===========================
     Victoria ganador -> do
       let tiempoRestante = tiempoEsperaVictoria gs - dt
-      putStrLn ("[UPDATE Victoria] obstaculos = " ++ show (length (obstaculos (mundo gs))))
+
       if tiempoRestante <= 0
       then do
-        -- ¿Quedan torneos?
         if torneosSobrantes gs > 0
         then do
-          putStrLn $ " Iniciando Torneo " ++ show (actualTorneo gs + 1) ++ "..."
+          putStrLn $ "----------------------------------------"
+          putStrLn $ "Iniciando Torneo " ++ show (actualTorneo gs + 1) ++ "..."
+          putStrLn $ "----------------------------------------"
           nuevoMundo <- mundoDesdeConfig
-          
+
+          let statsIniciales = Map.fromList
+                [ (carroId c, E.inicializarEstadisticasBot
+                                (carroId c)
+                                (team c)
+                                (show $ tipoCarro c))
+                | c <- carros nuevoMundo
+                ]
+
           pure gs
             { mundo = nuevoMundo
             , tiempo = 0.0
@@ -884,17 +655,20 @@ updateGame dt gs =
             , tiempoProxMeteorito = 2.0
             , actualTorneo = actualTorneo gs + 1
             , torneosSobrantes = torneosSobrantes gs - 1
-            , tiempoEsperaVictoria = 0.0
+            , tiempoEsperaVictoria = 3.0
+            , estadisticasBots = statsIniciales
             }
         else do
+          putStrLn ""
+          putStrLn "=========================================="
           putStrLn "¡TODOS LOS TORNEOS COMPLETADOS!"
+          putStrLn "=========================================="
+          E.guardarEstadisticasAgregadas (historialTorneos gs)
+          putStrLn "Estadísticas guardadas en estadisticas.txt"
           pure gs { modo = FinTorneos }
       else
         pure gs { tiempoEsperaVictoria = tiempoRestante }
 
-    -- ===========================
-    -- MODO: Jugando
-    -- ===========================
     Jugando -> do
       gsConMeteoritos <- actualizarMeteoritosEnPartida dt gs
       let m0 = mundo gsConMeteoritos
@@ -902,27 +676,56 @@ updateGame dt gs =
           vivos = filter (\c -> energia c > 0) (carros m0)
           muertosAntes = filter (\c -> energia c <= 0) (carros m0)
 
-      m1 <- foldM
-        (\mw c -> case botEstrategico mw c of
-                    Just as -> aplicarAccionesBot dt mw tiempoActual (c, as)
-                    Nothing -> pure mw
+      --Aplicar acciones de bots con tracking de estadísticas
+      (m1, statsConDisparos) <- foldM
+        (\(mw, st) c ->
+            case botEstrategico mw c of
+              Just as -> aplicarAccionesBot dt mw tiempoActual (c, as) st
+              Nothing -> pure (mw, st)
         )
-        m0
+        (m0, estadisticasBots gsConMeteoritos)
         vivos
 
-      let cs' = map (\c -> c { posicion = updatePosition dt (posicion c) (velocidad c) }) (carros m1)
-          ps' = map (\p -> p { posicionProyectil = updatePosition dt (posicionProyectil p) (velocidadProyectil p) }) (proyectiles m1)
-          m2  = m1 { carros = cs', proyectiles = ps' }
+      let (tamX, tamY) = tamanoMundo m1
+          margin = 20  -- margen para que no toquen el borde
+
+          limitarPos (x,y) =
+            let x' = max (-tamX/2 + margin) (min (tamX/2 - margin) x)
+                y' = max (-tamY/2 + margin) (min (tamY/2 - margin) y)
+            in (x', y')
+
+          cs' = map (\c ->
+                       let posNueva = updatePosition dt (posicion c) (velocidad c)
+                        in c { posicion = limitarPos posNueva }
+                    ) (carros m1)
+
+          ps' = map (\p ->
+                       let posNueva = updatePosition dt (posicionProyectil p) (velocidadProyectil p)
+                        in p { posicionProyectil = posNueva }
+                    ) (proyectiles m1)
+
+          m2 = m1 { carros = cs', proyectiles = ps' }
+
           m3  = limpiarProyectiles dt m2
           m4  = actualizarMeteoritos dt m3
           eventos = checkCollisions m4
-      
-      (m5, nuevasExplosiones) <- aplicarEventosColision eventos m4 gsConMeteoritos
-      
-      let (m5b, explosionesBombas) = actualizarBombasEnMundo dt m5
 
-          muertosDespues = filter (\c -> energia c <= 0) (carros m5)
+      --Actualizar estadísticas de tiempo vivo
+      let estadosVivos = [(carroId c, energia c > 0) | c <- carros m4]
+          statsConTiempo = E.registrarTiempoVivo dt estadosVivos statsConDisparos
+
+
+      --Aplicar colisiones con tracking de impactos
+      (m5, nuevasExplosiones, statsConImpactos) <- aplicarEventosColisionConStats eventos m4 gs statsConTiempo
+
+      let (m5b, explosionesBombas) = actualizarBombasEnMundo dt m5
+          muertosDespues = filter (\c -> energia c <= 0) (carros m4)
           nuevasMuertes = filter (\c -> all ((/= carroId c) . carroId) muertosAntes) muertosDespues
+
+          statsConMuertes =
+            foldr (\c stats -> E.registrarMuerte (carroId c) stats)
+                  statsConImpactos nuevasMuertes
+
           explosionesDeathActual =
             [ Explosion
                 { explosionPos = posicionCarro c
@@ -941,101 +744,147 @@ updateGame dt gs =
             ]
 
           todasExplosiones = explosionesActualizadas
-                           ++ nuevasExplosiones
-                           ++ explosionesBombas
-                           ++ explosionesDeathActual
+                          ++ nuevasExplosiones
+                          ++ explosionesBombas
+                          ++ explosionesDeathActual
 
           equiposVivos = nub (map team (carros m5b))
 
       limite <- tiempoLimiteDesdeConfig
       let tiempoSiguiente = tiempoActual + dt
+
       if tiempoSiguiente >= limite
-        then do
-          -- Fin por tiempo: elegir ganador por mayoría de tanques vivos (empate=0)
-          let vivosFinal = carros m6
-              estadisticas = contarPorEquipo vivosFinal
-              ganadorTiempo = if null estadisticas
-                              then 0
-                              else fst $ head $ sortBy (comparing (negate . snd)) estadisticas
-          pure gsConMeteoritos
-            { mundo = m6
-            , tiempo = tiempoSiguiente
-            , explosions = todasExplosiones
-            , modo = Victoria ganadorTiempo
-            , tiempoEsperaVictoria = 3.0
-            }
+        then finalizarTorneoConStats gs m6 tiempoSiguiente statsConMuertes todasExplosiones 0
         else if length equiposVivos <= 1
           then do
             let ganador = if null equiposVivos then 0 else head equiposVivos
-            putStrLn $ " Torneo " ++ show (actualTorneo gs)
-                      ++ " completado - Ganador: Equipo "
-                      ++ show ganador
-            pure gsConMeteoritos
-              { mundo = m6
-              , tiempo = tiempoSiguiente
-              , explosions = todasExplosiones
-              , modo = Victoria ganador
-              , tiempoEsperaVictoria = 3.0
-              }
+            finalizarTorneoConStats gs m6 tiempoSiguiente statsConMuertes todasExplosiones ganador
           else
-            pure gsConMeteoritos
+            pure gs
               { mundo = m6
               , tiempo = tiempoSiguiente
               , explosions = todasExplosiones
+              , estadisticasBots = statsConMuertes
               }
 
-    -- ===========================
-    -- MODO: Fin de todos los torneos
-    -- ===========================
     FinTorneos -> pure gs
 
-handleEventWithReset :: Event -> GameState -> IO GameState
-handleEventWithReset (EventKey (Char 'r') Down _ _) gs = 
+-- ==========================================================
+-- FINALIZAR TORNEO CON ESTADÍSTICAS
+-- ==========================================================
+
+finalizarTorneoConStats :: GameStateMundo -> Mundo -> Float -> Map.Map Int E.EstadisticasBot -> [Explosion] -> Int -> IO GameStateMundo
+finalizarTorneoConStats gs m6 tiempoSiguiente stats exps ganador = do
+  mundoInicial <- mundoDesdeConfig
+
+  let vivosFinal   = carros m6
+      estadisticas = contarPorEquipo vivosFinal
+      iniciales    = contarPorEquipo (carros mundoInicial)
+
+      totalDisp = sum [ E.disparosRealizados s | s <- Map.elems stats ]
+      totalImp  = sum [ E.impactosAcertados s | s <- Map.elems stats ]
+
+      torneoStats = E.EstadisticasTorneo
+        { E.numeroTorneo    = actualTorneo gs
+        , E.duracionTorneo  = tiempoSiguiente
+        , E.equipoGanador   = ganador
+        , E.tanquesIniciales = iniciales
+        , E.tanquesFinales   = estadisticas
+        , E.estadisticasBots = Map.elems stats
+        , E.totalDisparos    = totalDisp
+        , E.totalImpactos    = totalImp
+        }
+
+  E.guardarEstadisticasTorneo torneoStats
+
+  putStrLn $ " Torneo " ++ show (actualTorneo gs)
+            ++ " completado - Ganador: Equipo "
+            ++ show ganador
+
+  pure gs
+    { mundo = m6
+    , tiempo = tiempoSiguiente
+    , explosions = exps
+    , modo = Victoria ganador
+    , tiempoEsperaVictoria = 3.0
+    , historialTorneos = torneoStats : historialTorneos gs
+    }
+
+contarPorEquipo :: [CarroCombate] -> [(Int, Int)]
+contarPorEquipo carros =
+  let equipos = nub $ map team carros
+      contar eq = (eq, length $ filter (\c -> team c == eq) carros)
+  in map contar equipos
+
+-- ==========================================================
+-- REINICIAR JUEGO
+-- ==========================================================
+
+handleEventWithReset :: Event -> GameStateMundo -> IO GameStateMundo
+handleEventWithReset (EventKey (Char 'r') Down _ _) gs =
   case modo gs of
-    Menu -> pure gs  -- En el menú no hace nada
+    Menu -> pure gs
     _ -> do
       putStrLn $ "Reiniciando partida... (Ronda " ++ show (ronda gs + 1) ++ ")"
       reiniciarJuego gs
 
 handleEventWithReset event gs = GameTypes.handleEvent event gs
 
--- Reinicia el juego con un nuevo mundo aleatorio
-reiniciarJuego :: GameState -> IO GameState
+reiniciarJuego :: GameStateMundo -> IO GameStateMundo
 reiniciarJuego gs = do
-  m0 <- mundoDesdeConfig  -- Genera un nuevo mundo
+  m0 <- mundoDesdeConfig
+
+  let statsIniciales = Map.fromList
+        [ (carroId c, E.inicializarEstadisticasBot
+                        (carroId c)
+                        (team c)
+                        (show $ tipoCarro c))
+        | c <- carros m0
+        ]
+
   pure GameState
     { mundo = m0
     , tiempo = 0
-    , ronda = ronda gs + 1  -- Incrementa el contador de rondas
-    , modo = Jugando        -- Vuelve directamente al juego
+    , ronda = ronda gs + 1
+    , modo = Jugando
     , explosions = []
-    , bgIndex = bgIndex gs  -- Mantiene el fondo seleccionado
+    , bgIndex = bgIndex gs
     , proximoMeteoritoId = 1000
     , tiempoProxMeteorito = 2.0
-    , actualTorneo = 1 
+    , actualTorneo = 1
     , torneosSobrantes = 0
     , tiempoEsperaVictoria = 3.0
+    , estadisticasBots = statsIniciales
+    , historialTorneos = []
     }
 
--- Lee el archivo de configuracion y crea un mundo
+-- ==========================================================
+-- CONFIGURACIÓN DESDE ARCHIVO
+-- ==========================================================
+
 mundoDesdeConfig :: IO Mundo
 mundoDesdeConfig = do
-  let path = "config.txt"
-  eres <- try (readFile path) :: IO (Either IOException String)
-  case eres of
-    Left _ -> do
-      putStrLn "No se pudo abrir Modulos/config.txt. Usando mundoAleatorio."
+  let rutas = ["config.txt", "Modulos/config.txt", "./config.txt"]
+  intentarLeer rutas
+  where
+    intentarLeer [] = do
+      putStrLn "No se pudo abrir config.txt. Usando mundoAleatorio."
       mundoAleatorio
-    Right contenido ->
-      case parseConfigDetallado contenido of
-        Left errs -> do
-          putStrLn "Errores en config:"
-          mapM_ (\e -> putStrLn ("  - " ++ e)) errs
-          putStrLn "Usando mundoAleatorio."
-          mundoAleatorio
-        Right cfg -> construirMundoDesdeCfg cfg
 
---Lee número de rondas desde config (default 1)
+    intentarLeer (path:resto) = do
+      eres <- try (readFile path) :: IO (Either IOException String)
+      case eres of
+        Left _ -> intentarLeer resto
+        Right contenido -> do
+          putStrLn $ "Config cargado desde: " ++ path
+          case parseConfigDetallado contenido of
+            Left errs -> do
+              putStrLn "Errores en config:"
+              mapM_ (\e -> putStrLn ("  - " ++ e)) errs
+              putStrLn "Usando mundoAleatorio."
+              mundoAleatorio
+            Right cfg -> construirMundoDesdeCfg cfg
+
 rondasDesdeConfig :: IO Int
 rondasDesdeConfig = do
   let path = "config.txt"
@@ -1047,7 +896,6 @@ rondasDesdeConfig = do
         Right cfg -> pure (max 1 (cfgRounds cfg))
         Left _    -> pure 1
 
--- Lee límite de tiempo por torneo (segundos, default 120)
 tiempoLimiteDesdeConfig :: IO Float
 tiempoLimiteDesdeConfig = do
   let path = "config.txt"
@@ -1059,7 +907,10 @@ tiempoLimiteDesdeConfig = do
         Right cfg -> pure (max 1.0 (cfgTimeLimit cfg))
         Left _    -> pure 120.0
 
--- Estructura interna del parseo
+-- ==========================================================
+-- PARSEO DE CONFIGURACIÓN
+-- ==========================================================
+
 data ConfigInterna = ConfigInterna
   { cfgTamX      :: Float
   , cfgTamY      :: Float
@@ -1068,7 +919,7 @@ data ConfigInterna = ConfigInterna
   , cfgBombs     :: Int
   , cfgObstacles :: Int
   , cfgRounds    :: Int
-  , cfgTimeLimit :: Float    -- + límite de tiempo en segundos
+  , cfgTimeLimit :: Float
   } deriving (Show)
 
 construirMundoDesdeCfg :: ConfigInterna -> IO Mundo
@@ -1077,10 +928,12 @@ construirMundoDesdeCfg cfg = do
       tamY = cfgTamY cfg
       tipos1 = cfgEquipo1 cfg
       tipos2 = cfgEquipo2 cfg
+
   carrosEq1 <- mapM
     (\(i,t) -> do pos <- posicionPorEquipo 1 (tamX, tamY)
                   pure $ crearCarroPorTipo i 1 pos t)
     (zip [1..] tipos1)
+
   carrosEq2 <- mapM
     (\(i,t) -> do pos <- posicionPorEquipo 2 (tamX, tamY)
                   pure $ crearCarroPorTipo (i+100) 2 pos t)
@@ -1088,6 +941,7 @@ construirMundoDesdeCfg cfg = do
 
   bombas <- mapM (\i -> generarBomba i (tamX, tamY)) [1 .. cfgBombs cfg]
   obstaculosEst <- generarObstaculosEspaciados (cfgObstacles cfg) (tamX, tamY)
+
   pure Mundo
     { carros = carrosEq1 ++ carrosEq2
     , proyectiles = []
@@ -1098,49 +952,50 @@ construirMundoDesdeCfg cfg = do
     , memoria = memoriaMundo
     }
 
--- ==========================================================
--- PARSEO DE CONFIGURACIÓN
--- ==========================================================
-
 parseConfigDetallado :: String -> Either [String] ConfigInterna
 parseConfigDetallado raw =
   let ls = map limpiarLinea (lines raw)
       lsValid = filter (not . null) ls
       kvs = mapMaybe lineaKV lsValid
       lk k = lookupCI k kvs
+
       errs = concat
         [ falta "tamX" (lk "tamx")
         , falta "tamY" (lk "tamy")
         ]
+
       tamXv = lk "tamx" >>= readMaybe
       tamYv = lk "tamy" >>= readMaybe
       (eq1Errs, eq1) = leerListaTipos (lk "equipo1")
       (eq2Errs, eq2) = leerListaTipos (lk "equipo2")
+
       bombsV = lk "bombs" >>= readMaybe
       obstV  = lk "obstacles" >>= readMaybe
       roundsV = case (lk "rondas", lk "rounds") of
                   (Just s, _) -> readMaybe s
                   (_, Just s) -> readMaybe s
                   _           -> Nothing
-      -- tiempo máx: acepta 'tiempoMax', 'timelimit' o 'duracion'
+
       timeV = case (lk "tiempomax", lk "timelimit", lk "duracion") of
                 (Just s, _, _) -> readMaybe s
                 (_, Just s, _) -> readMaybe s
                 (_, _, Just s) -> readMaybe s
                 _              -> Nothing
-      -- Defaults
+
       bombsD  = maybe 6 id bombsV
       obstD   = maybe 8 id obstV
       roundsD = maybe 1 id roundsV
       timeD   = maybe 120.0 id timeV
-      -- Si listas vacías, genera 4 por equipo (defaults)
+
       eq1Final = if null eq1 then replicate 4 Ligero else eq1
       eq2Final = if null eq2 then replicate 4 Pesado else eq2
+
       allErrs = errs ++ eq1Errs ++ eq2Errs
+
   in case (tamXv, tamYv) of
-       (Just tx, Just ty) ->
-         if null allErrs
-           then Right ConfigInterna
+      (Just tx, Just ty) ->
+        if null allErrs
+          then Right ConfigInterna
                   { cfgTamX = tx
                   , cfgTamY = ty
                   , cfgEquipo1 = eq1Final
@@ -1150,10 +1005,9 @@ parseConfigDetallado raw =
                   , cfgRounds = max 1 roundsD
                   , cfgTimeLimit = max 1.0 timeD
                   }
-           else Left allErrs
-       _ -> Left (allErrs ++ ["No se pudieron leer tamX/tamY como números"])
+          else Left allErrs
+      _ -> Left (allErrs ++ ["No se pudieron leer tamX/tamY como números"])
 
--- Normaliza y elimina comentarios
 limpiarLinea :: String -> String
 limpiarLinea = trim . quitarComentario
   where
@@ -1175,7 +1029,7 @@ falta campo (Just _) = []
 falta campo Nothing  = ["Falta clave obligatoria: " ++ campo]
 
 leerListaTipos :: Maybe String -> ([String], [TipoCarro])
-leerListaTipos Nothing = (["Lista de tipos ausente (se usarán defaults aleatorios)"], [])
+leerListaTipos Nothing = (["Lista de tipos ausente (se usarán defaults)"], [])
 leerListaTipos (Just txt) =
   let tokens = filter (not . null) $ map trim $ splitMulti [',',';',' '] txt
       (errs, tipos) = foldr (\tok (es,ts) ->
@@ -1207,3 +1061,51 @@ splitMulti ds = foldr f [""]
 
 trim :: String -> String
 trim = dropWhile isSpace . dropWhileEnd isSpace
+
+-- ==========================================================
+-- EJECUTAR TORNEOS
+-- ==========================================================
+
+ejecutarTorneos :: Int -> IO ()
+ejecutarTorneos n = do
+  replicateM_ n ejecutarTorneo
+
+ejecutarTorneo :: IO ()
+ejecutarTorneo = do
+  putStrLn "Generando mundo aleatorio..."
+  m0 <- mundoAleatorio
+
+  let statsIniciales = Map.fromList
+        [ (carroId c, E.inicializarEstadisticasBot
+                        (carroId c)
+                        (team c)
+                        (show $ tipoCarro c))
+        | c <- carros m0
+        ]
+
+  let initial = GameState
+                  { mundo = m0
+                  , tiempo = 0
+                  , ronda = 1
+                  , modo = Jugando
+                  , explosions = []
+                  , bgIndex = 1
+                  , proximoMeteoritoId = 1000
+                  , tiempoProxMeteorito = 2.0
+                  , actualTorneo = 1
+                  , torneosSobrantes = 0
+                  , tiempoEsperaVictoria = 3.0
+                  , estadisticasBots = statsIniciales
+                  , historialTorneos = []
+                  }
+
+  putStrLn "Iniciando torneo..."
+  playIO (InWindow "Tank Game" (1000, 1000) (80, 80))
+        (makeColor 0.05 0.05 0.15 1.0)
+        60
+        initial
+        renderGame
+        handleEventWithReset
+        updateGame
+
+  putStrLn "Torneo finalizado."
