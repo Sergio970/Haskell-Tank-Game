@@ -10,7 +10,7 @@ import Bot (botEstrategico, BotAction(..))
 import Physics (updatePosition, vectorNulo, normalize, distanceBetween)
 import Collisions (CollisionEvent(..), checkCollisions)
 import GameTypes
-import Torneos (mundoAleatorio, updateGame, mundoDesdeConfig, rondasDesdeConfig)
+import Torneos (mundoAleatorio, updateGame, mundoDesdeConfig, rondasDesdeConfig, handleEventWithReset)
 import Rendering (renderGame)
 
 --------------------------------
@@ -37,6 +37,8 @@ main = do
         , actualTorneo = 1
         , torneosSobrantes = max 0 (rondas - 1)  -- desde config
         , tiempoEsperaVictoria = 0.0
+        , estadisticasBots = mempty       
+        , historialTorneos = []           
         }
   
   -- Iniciar loop de Gloss
@@ -45,6 +47,6 @@ main = do
     white
     60
     estadoInicial
-    renderGame      -- función de rendering
-    handleEvent     -- Manejador de eventos
-    updateGame      -- función de actualización
+    renderGame               -- función de rendering
+    handleEventWithReset     -- Manejador de eventos
+    updateGame               -- función de actualización

@@ -9,6 +9,7 @@ import System.Random (mkStdGen, randomRs)
 import Types (MunicionTipo(..), TipoCarro(..))
 import Unidad
 import GameTypes
+import qualified Estadisticas as E
 
 -- =====================================================
 -- Configuración de la ventana
@@ -415,8 +416,9 @@ textoBold txt escala col = Pictures
   , dy <- [-0.8, -0.4, 0, 0.4, 0.8]
   ]
 
-renderGame :: GameState -> IO Picture
+renderGame :: GameState E.EstadisticasBot E.EstadisticasTorneo -> IO Picture
 renderGame gs = do
+  putStrLn ("obstaculos=" ++ show (length (obstaculos (mundo gs))))
   case modo gs of
 
     Menu -> do
@@ -593,9 +595,3 @@ drawStatsPanel m rondaActual =
     ]
 
 
--- =====================================================
--- Event handler
--- =====================================================
-
-handleEvent :: Event -> GameState -> IO GameState
-handleEvent _ gs = pure gs

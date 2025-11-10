@@ -27,7 +27,7 @@ import qualified Estadisticas as E
 -- TIPO ALIAS
 -- ==========================================================
 
-type GameStateMundo = GameState Mundo E.EstadisticasBot E.EstadisticasTorneo
+type GameStateMundo = GameState E.EstadisticasBot E.EstadisticasTorneo
 
 -- ==========================================================
 -- CREACIÓN DE CARROS
@@ -760,7 +760,7 @@ updateGame dt gs =
             let ganador = if null equiposVivos then 0 else head equiposVivos
             finalizarTorneoConStats gs m6 tiempoSiguiente statsConMuertes todasExplosiones ganador
           else
-            pure gs
+            pure gsConMeteoritos
               { mundo = m6
               , tiempo = tiempoSiguiente
               , explosions = todasExplosiones
@@ -828,7 +828,7 @@ handleEventWithReset (EventKey (Char 'r') Down _ _) gs =
       putStrLn $ "Reiniciando partida... (Ronda " ++ show (ronda gs + 1) ++ ")"
       reiniciarJuego gs
 
-handleEventWithReset event gs = GameTypes.handleEvent event gs
+handleEventWithReset event gs = GameTypes.handleEventBasico  event gs
 
 reiniciarJuego :: GameStateMundo -> IO GameStateMundo
 reiniciarJuego gs = do
