@@ -418,8 +418,8 @@ textoBold txt escala col = Pictures
 renderGame :: GameState -> IO Picture
 renderGame gs = do
   case modo gs of
+
     Menu -> do
-      -- Solo estrellas como fondo en el menú
       pure $ Pictures
         [ drawBackground 0
         , drawMenuWith (bgIndex gs)
@@ -428,20 +428,28 @@ renderGame gs = do
     Victoria eq -> do
       let m = mundo gs
           fondoSel = drawSelectedBackground (bgIndex gs)
+
           vivos = filter (\c -> energia c > 0) (carros m)
-          obsEst = map (drawObstaculoEstatico m) (obstaculosEstaticos m)
+
+          obsEst   = map (drawObstaculoEstatico m) (obstaculosEstaticos m)
+          mets     = map (drawMeteorito m) (obstaculos m)
+          estelasR = concat [map (drawEstela m met) (estelas met) | met <- obstaculos m]
+
           tanks = map (drawTank m) vivos
           bars  = map (drawHealthBar m) vivos
           projs = map (drawProjectile m) (proyectiles m)
           bombs = map (drawBomb m) (bombas m)
           explosionPics = map (drawExplosion m) (explosions gs)
+
           tiempoEspera = ceiling (tiempoEsperaVictoria gs)
 
-          -- Mensajes
           mensaje = Translate (-240) 20 $
                     textoBold ("Ha ganado el equipo " ++ show eq) 0.3 yellow
+
           mensaje2 = Translate (-250) (-20) $
-                    textoBold ("Próximo torneo en " ++ show tiempoEspera ++ " segundos") 0.25 yellow
+                     textoBold ("Próximo torneo en "
+                                ++ show tiempoEspera
+                                ++ " segundos") 0.25 yellow
 
           separador = Translate 0 (-60) $
                       Color (greyN 0.5) $ Line [(-300, 0), (300, 0)]
@@ -458,17 +466,28 @@ renderGame gs = do
 
       pure $ Pictures
         ( [fondoSel]
-       ++ obsEst ++ bombs ++ tanks ++ bars ++ projs ++ explosionPics
+       ++ obsEst
+       ++ estelasR
+       ++ mets
+       ++ bombs
+       ++ tanks
+       ++ bars
+       ++ projs
+       ++ explosionPics
        ++ [mensaje, mensaje2, separador, instruccion1, instruccion2, rondaInfo]
         )
+
 
     Jugando -> do
       let m = mundo gs
           fondoSel = drawSelectedBackground (bgIndex gs)
+
           vivos = filter (\c -> energia c > 0) (carros m)
-          obsEst = map (drawObstaculoEstatico m) (obstaculosEstaticos m)
-          mets = map (drawMeteorito m) (obstaculos m)
+
+          obsEst   = map (drawObstaculoEstatico m) (obstaculosEstaticos m)
+          mets     = map (drawMeteorito m) (obstaculos m)
           estelasR = concat [map (drawEstela m met) (estelas met) | met <- obstaculos m]
+
           tanks = map (drawTank m) vivos
           bars  = map (drawHealthBar m) vivos
           projs = map (drawProjectile m) (proyectiles m)
@@ -483,14 +502,24 @@ renderGame gs = do
 
       pure $ Pictures
         ( [hudTorneo, fondoSel]
-       ++ obsEst ++ estelasR ++ mets ++ bombs ++ tanks ++ bars ++ projs ++ explosionPics ++ [statsPanel]
+       ++ obsEst
+       ++ estelasR
+       ++ mets
+       ++ bombs
+       ++ tanks
+       ++ bars
+       ++ projs
+       ++ explosionPics
+       ++ [statsPanel]
         )
+
 
     FinTorneos -> do
       pure $ Pictures
         [ Translate 0 0 $ Scale 0.3 0.3 $ Color blue $ Text "¡Torneos Completados!"
         , Translate 0 (-50) $ Scale 0.15 0.15 $ Color black $ Text "Presiona ESC para salir"
         ]
+
 
 -- Pantalla de menú inicial
 drawMenuWith :: Int -> Picture

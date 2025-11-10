@@ -865,7 +865,7 @@ updateGame dt gs =
     -- ===========================
     Victoria ganador -> do
       let tiempoRestante = tiempoEsperaVictoria gs - dt
-      
+      putStrLn ("[UPDATE Victoria] obstaculos = " ++ show (length (obstaculos (mundo gs))))
       if tiempoRestante <= 0
       then do
         -- ¿Quedan torneos?
@@ -917,11 +917,11 @@ updateGame dt gs =
           m4  = actualizarMeteoritos dt m3
           eventos = checkCollisions m4
       
-      (m5, nuevasExplosiones) <- aplicarEventosColision eventos m4 gs
+      (m5, nuevasExplosiones) <- aplicarEventosColision eventos m4 gsConMeteoritos
       
       let (m5b, explosionesBombas) = actualizarBombasEnMundo dt m5
 
-          muertosDespues = filter (\c -> energia c <= 0) (carros m4)
+          muertosDespues = filter (\c -> energia c <= 0) (carros m5)
           nuevasMuertes = filter (\c -> all ((/= carroId c) . carroId) muertosAntes) muertosDespues
           explosionesDeathActual =
             [ Explosion
@@ -957,7 +957,7 @@ updateGame dt gs =
               ganadorTiempo = if null estadisticas
                               then 0
                               else fst $ head $ sortBy (comparing (negate . snd)) estadisticas
-          pure gs
+          pure gsConMeteoritos
             { mundo = m6
             , tiempo = tiempoSiguiente
             , explosions = todasExplosiones
@@ -970,7 +970,7 @@ updateGame dt gs =
             putStrLn $ " Torneo " ++ show (actualTorneo gs)
                       ++ " completado - Ganador: Equipo "
                       ++ show ganador
-            pure gs
+            pure gsConMeteoritos
               { mundo = m6
               , tiempo = tiempoSiguiente
               , explosions = todasExplosiones
@@ -978,7 +978,7 @@ updateGame dt gs =
               , tiempoEsperaVictoria = 3.0
               }
           else
-            pure gs
+            pure gsConMeteoritos
               { mundo = m6
               , tiempo = tiempoSiguiente
               , explosions = todasExplosiones
