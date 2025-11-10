@@ -1,8 +1,9 @@
 module GameTypes where
 
-import Unidad (Mundo)
 import Graphics.Gloss.Interface.IO.Game (Event(..), Key(..), SpecialKey(..), KeyState(..), Modifiers(..))
 import System.Exit (exitSuccess)
+import qualified Data.Map.Strict as Map
+
 
 data Modo = Menu | Jugando | Victoria Int | FinTorneos deriving (Eq, Show)
 
@@ -15,45 +16,42 @@ data Explosion = Explosion
   , explosionType :: ExplosionType
   } deriving (Show)
 
-data GameState = GameState
-  { mundo      :: Mundo
+data GameState mundo statsBot statsTorneo = GameState
+  { mundo      :: mundo
   , tiempo     :: Float
   , ronda      :: Int
   , modo       :: Modo
   , explosions :: [Explosion]
-  , bgIndex    :: Int          -- 1 o 2, selección de fondo
+  , bgIndex    :: Int
   , proximoMeteoritoId  :: Int
   , tiempoProxMeteorito :: Float
   , actualTorneo :: Int
   , torneosSobrantes :: Int
-  , tiempoEsperaVictoria :: Float  -- 3 segundos entre torneos
+  , tiempoEsperaVictoria :: Float
+  , estadisticasBots :: Map.Map Int statsBot      
+  , historialTorneos :: [statsTorneo]             
   } deriving (Show)
 
--- Event handler básico para el menú
-handleEvent :: Event -> GameState -> IO GameState
+-- Event handler básico
+handleEvent :: Event -> GameState mundo sb st -> IO (GameState mundo sb st)
 handleEvent (EventKey (SpecialKey KeyEnter) Down _ _) gs =
   if modo gs == Menu then pure gs { modo = Jugando } else pure gs
 
--- Alternar fondo en el menú con tecla 'F'
 handleEvent (EventKey (Char 'f') Down _ _) gs =
   if modo gs == Menu
     then pure gs { bgIndex = if bgIndex gs == 1 then 2 else 1 }
     else pure gs
 
--- Pausar (P) cuando estás jugando: vuelve al menú
 handleEvent (EventKey (Char 'p') Down _ _) gs =
   if modo gs == Jugando
     then pure gs { modo = Menu }
     else pure gs
 
--- Reiniciar partida con 'R' 
 handleEvent (EventKey (Char 'r') Down _ _) gs = do
   return gs  
 
--- Salir del juego con 'Esc'
 handleEvent (EventKey (SpecialKey KeyEsc) Down _ _) gs = do
   putStrLn "Saliendo del juego..."
-  exitSuccess  -- Termina el programa
+  exitSuccess
 
--- Ignorar todo lo demás
 handleEvent _ gs = pure gs
